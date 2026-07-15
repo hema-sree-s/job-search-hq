@@ -1,0 +1,1076 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Job Search HQ</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0B0F14;
+    --surface: #101722;
+    --surface2: #151D29;
+    --border: #1F2937;
+    --text: #E7ECF2;
+    --text-muted: #8B96A5;
+    --accent: #4FD1C5;
+    --accent-dim: #0F6E56;
+    --amber: #F5A524;
+    --danger: #E5675F;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif; }
+  ::selection { background: var(--accent); color: #06110F; }
+
+  .app { max-width: 1100px; margin: 0 auto; padding: 28px 24px 80px; }
+
+  .topbar { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 22px; flex-wrap: wrap; gap: 10px; }
+  .brand { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; }
+  .brand span { color: var(--accent); }
+  .subtitle { color: var(--text-muted); font-size: 13px; font-family: 'IBM Plex Mono', monospace; }
+
+  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 24px; overflow-x: auto; }
+  .tab {
+    background: none; border: none; color: var(--text-muted); font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px; padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tab:hover:not(.active) { color: var(--text); }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .grid { display: grid; gap: 16px; }
+  .grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .stat-label { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value { font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700; color: var(--accent); margin-top: 4px; }
+
+  .ring-wrap { display: flex; align-items: center; gap: 20px; }
+  .ring-label { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-muted); text-transform: uppercase; }
+  .ring-num { font-family: 'Space Grotesk', sans-serif; font-size: 30px; font-weight: 700; }
+
+  h2.section-title {
+    font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600; margin: 28px 0 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2.section-title .rule { flex-grow: 1; height: 1px; background: var(--border); }
+
+  .banner {
+    background: #14251F; border: 1px solid var(--accent-dim); border-radius: 8px; padding: 14px 16px;
+    margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .banner strong { color: var(--accent); }
+  .banner .msg { font-size: 13.5px; line-height: 1.5; }
+
+  button {
+    font-family: 'IBM Plex Sans', sans-serif; cursor: pointer; border: none; border-radius: 7px;
+    padding: 8px 14px; font-size: 13px; font-weight: 600;
+  }
+  .btn-primary { background: var(--accent); color: #06110F; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid #3A2222; padding: 5px 10px; font-size: 12px; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+  input, select, textarea {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif; font-size: 13.5px; padding: 8px 10px; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  label { font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 0.4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase; color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: rgba(79, 209, 197, 0.03); }
+  .status-pill { font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 3px 9px; border-radius: 999px; display: inline-block; }
+  .status-Applied { background: #1B2431; color: var(--text-muted); }
+  .status-Interview { background: #14251F; color: var(--accent); }
+  .status-Offer { background: #2A2410; color: var(--amber); }
+  .status-Rejected { background: #2A1616; color: var(--danger); }
+  .status-Ghosted { background: #1B2431; color: var(--text-muted); }
+
+  .topic-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; }
+  .topic-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .topic-name { font-weight: 600; font-size: 14px; }
+  .topic-cat { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--accent); text-transform: uppercase; }
+  .topic-sources { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .topic-sources a { color: var(--accent); font-size: 12.5px; text-decoration: none; }
+  .topic-sources a:hover { text-decoration: underline; }
+  .status-select { width: auto; padding: 5px 8px; font-size: 12px; }
+
+  .doc-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .doc-tab { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); }
+  .doc-tab.active { color: var(--accent); border-color: var(--accent-dim); }
+  textarea.doc-view { min-height: 420px; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; line-height: 1.6; white-space: pre; }
+
+  .sync-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .sync-row:last-child { border-bottom: none; }
+  .sync-name { font-weight: 600; font-size: 14px; }
+  .sync-date { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-muted); }
+
+  .empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 30px 0; }
+  .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 10px; }
+
+  .checklist-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .checklist-item:last-child { border-bottom: none; }
+  .checklist-item input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+  .checklist-item label { text-transform: none; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; color: var(--text); margin: 0; cursor: pointer; flex-grow: 1; }
+  .checklist-item.done label { color: var(--text-muted); text-decoration: line-through; }
+
+  .roadmap-item { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .roadmap-item:last-child { border-bottom: none; }
+  .roadmap-num {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--accent);
+    background: #14251F; border: 1px solid var(--accent-dim); border-radius: 50%; width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .roadmap-body { flex-grow: 1; }
+  .roadmap-title { font-weight: 600; font-size: 15px; }
+  .roadmap-why { color: var(--text-muted); font-size: 13px; margin-top: 4px; line-height: 1.5; }
+  .roadmap-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; flex-wrap: wrap; gap: 8px; }
+
+  .profile-field { margin-bottom: 14px; }
+  .profile-field textarea { min-height: 70px; font-family: 'IBM Plex Sans', sans-serif; }
+
+  .followup-badge { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--amber); border: 1px solid #3A2E12; border-radius: 5px; padding: 1px 6px; margin-left: 6px; }
+
+  .tc-table input { font-size: 12.5px; padding: 5px 8px; }
+  .tc-table td { padding: 6px 8px; }
+
+  #auth-overlay {
+    position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 100;
+  }
+  .auth-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 32px; width: 100%; max-width: 360px; }
+  .auth-card h1 { font-family: 'Space Grotesk', sans-serif; font-size: 20px; margin: 0 0 6px; }
+  .auth-card p { color: var(--text-muted); font-size: 13px; margin: 0 0 20px; }
+  .auth-field { margin-bottom: 12px; }
+  .auth-toggle { text-align: center; margin-top: 14px; font-size: 12.5px; color: var(--text-muted); }
+  .auth-toggle a { color: var(--accent); cursor: pointer; text-decoration: none; }
+  .auth-error { color: var(--danger); font-size: 12.5px; margin-top: 8px; min-height: 16px; }
+  #app-root { display: none; }
+</style>
+</head>
+<body>
+
+<div id="auth-overlay">
+  <div class="auth-card">
+    <h1>Job Search HQ</h1>
+    <p id="auth-subtitle">Sign in to sync your data across every device.</p>
+    <div class="auth-field"><input id="auth-email" type="email" placeholder="Email" /></div>
+    <div class="auth-field"><input id="auth-password" type="password" placeholder="Password" /></div>
+    <button class="btn-primary" style="width:100%;" onclick="authSubmit()" id="auth-submit-btn">Sign In</button>
+    <div class="auth-error" id="auth-error"></div>
+    <div style="display:flex; align-items:center; gap:10px; margin:16px 0; color:var(--text-muted); font-size:12px;">
+      <div style="flex:1; height:1px; background:var(--border);"></div>OR<div style="flex:1; height:1px; background:var(--border);"></div>
+    </div>
+    <button class="btn-secondary" style="width:100%;" onclick="signInWithGoogle()">Sign in with Google</button>
+    <div class="auth-toggle" id="auth-toggle-wrap">First time here? <a onclick="toggleAuthMode()">Create an account</a></div>
+  </div>
+</div>
+
+<div id="app-root">
+<div class="app">
+
+  <div class="topbar">
+    <div>
+      <div class="brand">Job Search <span>HQ</span></div>
+      <div class="subtitle">Your applications, learning, and resume — organized in one place</div>
+    </div>
+    <button class="btn-secondary btn-sm" onclick="signOutUser()">Sign out</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="applications">Applications</button>
+    <button class="tab" data-tab="targets">Target Companies</button>
+    <button class="tab" data-tab="learning">Learning</button>
+    <button class="tab" data-tab="documents">Documents</button>
+    <button class="tab" data-tab="profile">Profile</button>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="panel active" id="panel-dashboard">
+    <div id="reminder-banner"></div>
+
+    <h2 class="section-title" style="margin-top:0;">Today's Checklist<div class="rule"></div></h2>
+    <div class="card" id="checklist-card" style="margin-bottom:16px;"></div>
+
+
+    <div class="card">
+      <div class="ring-wrap">
+        <svg width="86" height="86" viewBox="0 0 86 86">
+          <circle cx="43" cy="43" r="36" fill="none" stroke="#1F2937" stroke-width="9"/>
+          <circle id="ring-progress" cx="43" cy="43" r="36" fill="none" stroke="#4FD1C5" stroke-width="9"
+                  stroke-linecap="round" stroke-dasharray="226" stroke-dashoffset="226" transform="rotate(-90 43 43)"/>
+        </svg>
+        <div>
+          <div class="ring-label">Today's Applications</div>
+          <div class="ring-num"><span id="today-count">0</span> / 20</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-4" style="margin-top:16px;">
+      <div class="card"><div class="stat-label">This Week</div><div class="stat-value" id="week-count">0</div></div>
+      <div class="card"><div class="stat-label">Total Applications</div><div class="stat-value" id="total-count">0</div></div>
+      <div class="card"><div class="stat-label">Needs Follow-up</div><div class="stat-value" id="followup-count" style="color:var(--amber);">0</div></div>
+      <div class="card"><div class="stat-label">Interviews</div><div class="stat-value" id="interview-count">0</div></div>
+    </div>
+
+    <h2 class="section-title">Sync Status<div class="rule"></div></h2>
+    <div class="card" id="sync-status-card"></div>
+  </div>
+
+  <!-- APPLICATIONS -->
+  <div class="panel" id="panel-applications">
+    <div class="card" style="margin-bottom:14px;">
+      <h2 class="section-title" style="margin-top:0;">Quick add<div class="rule"></div></h2>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <input id="qa-company" placeholder="Company name" style="flex:1; min-width:180px;" onkeydown="if(event.key==='Enter') quickAdd()" />
+        <button class="btn-primary" onclick="quickAdd()">Log it (Applied, today)</button>
+      </div>
+      <p style="color:var(--text-muted); font-size:12px; margin:10px 0 0;">Fills in today's date, status "Applied", source "Job Board" automatically. Edit details on the row after if needed.</p>
+    </div>
+
+    <details style="margin-bottom:18px;">
+      <summary style="cursor:pointer; color:var(--text-muted); font-size:13px; padding:8px 0;">Add with full detail instead</summary>
+      <div class="card" style="margin-top:10px;">
+        <div class="form-row">
+          <div><label>Company</label><input id="f-company" placeholder="e.g. Amazon" /></div>
+          <div><label>Role</label><input id="f-role" placeholder="e.g. Software Engineer I" /></div>
+          <div><label>Link</label><input id="f-link" placeholder="https://..." /></div>
+        </div>
+        <div class="form-row">
+          <div><label>Source</label>
+            <select id="f-source">
+              <option>Referral</option><option>Job Board</option><option>Company Site</option><option>Cold Apply</option>
+            </select>
+          </div>
+          <div><label>Known Sponsor?</label>
+            <select id="f-sponsor"><option>Unknown</option><option>Yes</option><option>No</option></select>
+          </div>
+          <div><label>Status</label>
+            <select id="f-status"><option>Applied</option><option>Interview</option><option>Offer</option><option>Rejected</option><option>Ghosted</option></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div><label>Notes</label><input id="f-notes" placeholder="optional" /></div>
+        </div>
+        <button class="btn-primary" onclick="addApplication()">Add application</button>
+      </div>
+    </details>
+
+    <h2 class="section-title" style="margin-top:0;">Log<div class="rule"></div></h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>Date</th><th>Company</th><th>Role</th><th>Source</th><th>Sponsor</th><th>Status</th><th></th></tr></thead>
+        <tbody id="applications-table"></tbody>
+      </table>
+      <div class="empty" id="applications-empty" style="display:none;">No applications logged yet — use Quick Add above.</div>
+    </div>
+  </div>
+
+  <!-- TARGET COMPANIES -->
+  <div class="panel" id="panel-targets">
+    <p style="color:var(--text-muted); font-size:13px;">Companies with a track record of sponsoring OPT/H-1B candidates. Prioritize these in your daily 20 — aim for at least 3-5 a day from this list.</p>
+    <div class="card">
+      <table class="tc-table">
+        <thead><tr><th>Company</th><th>Track Record</th><th>Applied?</th><th>Referral Contact</th><th>Notes</th></tr></thead>
+        <tbody id="targets-table"></tbody>
+      </table>
+      <button class="btn-primary btn-sm" style="margin-top:14px;" onclick="saveTargets()">Save changes</button>
+      <span class="sync-date" id="targets-saved" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  <!-- LEARNING -->
+  <div class="panel" id="panel-learning">
+    <h2 class="section-title" style="margin-top:0;">Certification Roadmap — complete in order<div class="rule"></div></h2>
+    <p style="color:var(--text-muted); font-size:13px; margin-top:-8px;">Sequenced to build on what you already have — each one leverages the last. Ask Claude weekly if you want this reordered based on how interviews are going.</p>
+    <div class="card" id="roadmap-card" style="margin-bottom:24px;"></div>
+
+    <div class="card" style="margin-bottom:18px;">
+      <h2 class="section-title" style="margin-top:0;">Add a custom topic<div class="rule"></div></h2>
+      <div class="form-row">
+        <div><label>Topic name</label><input id="lt-name" placeholder="e.g. Kubernetes basics" /></div>
+        <div><label>Category</label><input id="lt-category" placeholder="e.g. Cloud & DevOps" /></div>
+        <div><label>Source URL (optional)</label><input id="lt-url" placeholder="https://..." /></div>
+      </div>
+      <button class="btn-primary" onclick="addTopic()">Add topic</button>
+    </div>
+    <div id="topics-list"></div>
+  </div>
+
+  <!-- DOCUMENTS -->
+  <div class="panel" id="panel-documents">
+    <div class="doc-tabs">
+      <button class="doc-tab active" data-doc="clean" onclick="switchDoc('clean')">Clean ATS Resume</button>
+      <button class="doc-tab" data-doc="raw" onclick="switchDoc('raw')">Raw Data Dump</button>
+    </div>
+    <div class="card">
+      <textarea class="doc-view" id="doc-textarea"></textarea>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
+        <span class="sync-date" id="doc-last-saved"></span>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-secondary btn-sm" onclick="downloadDoc('txt')">Download .txt</button>
+          <button class="btn-secondary btn-sm" onclick="downloadDoc('doc')">Download Word (.doc)</button>
+          <button class="btn-primary btn-sm" onclick="saveDoc()">Save changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROFILE -->
+  <div class="panel" id="panel-profile">
+    <h2 class="section-title" style="margin-top:0;">Import from Resume<div class="rule"></div></h2>
+    <div class="card" style="margin-bottom:20px;">
+      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload a PDF or DOCX resume. This pulls the raw text into your Documents tab and auto-fills email/phone if found — it's a starting point, not a finished profile. Review and edit everything after.</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <input type="file" id="resume-upload" accept=".pdf,.docx" style="flex:1; min-width:200px;" />
+        <button class="btn-primary" onclick="handleResumeUpload()">Extract</button>
+      </div>
+      <div style="font-size:12.5px; color:var(--accent); margin-top:8px;" id="resume-upload-status"></div>
+    </div>
+
+    <h2 class="section-title">Contact & Links<div class="rule"></div></h2>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="grid grid-2">
+        <div class="profile-field"><label>Full Name</label><input id="p-name" /></div>
+        <div class="profile-field"><label>Location</label><input id="p-location" /></div>
+        <div class="profile-field"><label>Phone</label><input id="p-phone" /></div>
+        <div class="profile-field"><label>Email</label><input id="p-email" /></div>
+        <div class="profile-field"><label>Portfolio URL</label><input id="p-portfolio" /></div>
+        <div class="profile-field"><label>GitHub URL</label><input id="p-github" /></div>
+        <div class="profile-field"><label>LinkedIn URL</label><input id="p-linkedin" /></div>
+      </div>
+    </div>
+
+    <h2 class="section-title">Job Preferences<div class="rule"></div></h2>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="grid grid-2">
+        <div class="profile-field"><label>Target Job Titles</label><input id="p-titles" placeholder="Software Engineer, ML Engineer, Data Engineer..." /></div>
+        <div class="profile-field"><label>Target Locations</label><input id="p-locations" placeholder="Atlanta, Dallas, Remote..." /></div>
+      </div>
+    </div>
+
+    <h2 class="section-title">Elevator Pitch<div class="rule"></div></h2>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="profile-field"><textarea id="p-pitch" placeholder="Your 30-second verbal intro for networking/interviews..."></textarea></div>
+    </div>
+
+    <h2 class="section-title">Achievements & Awards<div class="rule"></div></h2>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="profile-field"><textarea id="p-achievements" placeholder="Anything not already on the resume — awards, recognitions, notable results..."></textarea></div>
+    </div>
+
+    <h2 class="section-title">Job Search Notes<div class="rule"></div></h2>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="profile-field"><textarea id="p-notes" placeholder="Anything else worth keeping — interview feedback patterns, recruiter names, whatever's useful to you."></textarea></div>
+    </div>
+
+    <button class="btn-primary" onclick="saveProfile()">Save profile</button>
+    <span class="sync-date" id="profile-saved" style="margin-left:12px;"></span>
+  </div>
+
+</div>
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<!-- Resume text extraction -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+
+<script>
+// ============================================================
+// FIREBASE SETUP
+// ============================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyD5fF-4z-6xY6ewUHb8lQU5s03idcRT8Po",
+  authDomain: "job-search-hq-1ac05.firebaseapp.com",
+  projectId: "job-search-hq-1ac05",
+  storageBucket: "job-search-hq-1ac05.firebasestorage.app",
+  messagingSenderId: "446871710586",
+  appId: "1:446871710586:web:43c4cdbd50f082575784c3"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+let uid = null;
+let cachedDoc = {};
+let isSignUpMode = false;
+
+function toggleAuthMode() {
+  isSignUpMode = !isSignUpMode;
+  document.getElementById('auth-submit-btn').textContent = isSignUpMode ? 'Create Account' : 'Sign In';
+  document.getElementById('auth-subtitle').textContent = isSignUpMode ? 'Create your account — use the same one on every device.' : 'Sign in to sync your data across every device.';
+  document.getElementById('auth-toggle-wrap').innerHTML = isSignUpMode
+    ? 'Already have an account? <a onclick="toggleAuthMode()">Sign in</a>'
+    : 'First time here? <a onclick="toggleAuthMode()">Create an account</a>';
+  document.getElementById('auth-error').textContent = '';
+}
+
+async function authSubmit() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'Email and password required.'; return; }
+  try {
+    if (isSignUpMode) {
+      await auth.createUserWithEmailAndPassword(email, password);
+    } else {
+      await auth.signInWithEmailAndPassword(email, password);
+    }
+  } catch (e) {
+    errEl.textContent = e.message;
+  }
+}
+
+function signOutUser() {
+  auth.signOut();
+}
+
+async function signInWithGoogle() {
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    await auth.signInWithPopup(provider);
+  } catch (e) {
+    errEl.textContent = e.message;
+  }
+}
+
+auth.onAuthStateChanged(async (user) => {
+  if (user) {
+    uid = user.uid;
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('app-root').style.display = 'block';
+    const snap = await db.collection('users').doc(uid).collection('appData').doc('main').get();
+    cachedDoc = snap.exists ? snap.data() : {};
+    await init();
+  } else {
+    uid = null;
+    document.getElementById('auth-overlay').style.display = 'flex';
+    document.getElementById('app-root').style.display = 'none';
+  }
+});
+
+// ============================================================
+// STORAGE HELPERS (now backed by Firestore instead of window.storage)
+// ============================================================
+async function loadData(key, fallback) {
+  return (key in cachedDoc && cachedDoc[key] !== undefined) ? cachedDoc[key] : fallback;
+}
+async function saveData(key, value) {
+  cachedDoc[key] = value;
+  try {
+    await db.collection('users').doc(uid).collection('appData').doc('main').set({ [key]: value }, { merge: true });
+  } catch (e) {
+    console.error('Save failed', key, e);
+  }
+}
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const daysAgo = (isoDate) => {
+  if (!isoDate) return Infinity;
+  const diff = (new Date(todayISO()) - new Date(isoDate)) / 86400000;
+  return Math.floor(diff);
+};
+
+// ============================================================
+// TARGET COMPANIES (pre-researched OPT/H-1B sponsors)
+// ============================================================
+const DEFAULT_TARGETS = [
+  { company: 'Amazon', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Microsoft', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Google', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Apple', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Meta', track: 'Moderate', applied: false, referral: '', notes: '' },
+  { company: 'IBM', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Oracle', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Salesforce', track: 'Moderate', applied: false, referral: '', notes: '' },
+  { company: 'Cisco', track: 'Moderate', applied: false, referral: '', notes: '' },
+  { company: 'Intel', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'NVIDIA', track: 'Moderate', applied: false, referral: '', notes: '' },
+  { company: 'JPMorgan Chase', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Capital One', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Wells Fargo', track: 'Moderate', applied: false, referral: '', notes: '' },
+  { company: 'Visa', track: 'Moderate', applied: false, referral: '', notes: '' },
+  { company: 'PayPal', track: 'Moderate', applied: false, referral: '', notes: '' },
+  { company: 'Deloitte', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Accenture', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Cognizant', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'TCS', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Infosys', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Walmart Global Tech', track: 'Strong', applied: false, referral: '', notes: '' },
+  { company: 'Databricks', track: 'Moderate', applied: false, referral: '', notes: '' },
+  { company: 'Snowflake', track: 'Moderate', applied: false, referral: '', notes: '' },
+];
+
+// ============================================================
+// DEFAULT PROFILE (prefilled from your resume/portfolio)
+// ============================================================
+const DEFAULT_PROFILE = {
+  name: '', location: '', phone: '', email: '', portfolio: '', github: '', linkedin: '',
+  titles: '', locations: '', pitch: '', achievements: '', notes: '',
+};
+
+
+const DEFAULT_TOPICS = [
+  { id: 't1', name: 'Arrays & Hashing', category: 'DSA & Coding Interviews', resources: [{ label: 'NeetCode 150', url: 'https://neetcode.io/practice' }] },
+  { id: 't2', name: 'Two Pointers & Sliding Window', category: 'DSA & Coding Interviews', resources: [{ label: 'NeetCode 150', url: 'https://neetcode.io/practice' }] },
+  { id: 't3', name: 'Trees & Graphs', category: 'DSA & Coding Interviews', resources: [{ label: 'NeetCode 150', url: 'https://neetcode.io/practice' }] },
+  { id: 't4', name: 'Dynamic Programming', category: 'DSA & Coding Interviews', resources: [{ label: 'NeetCode 150', url: 'https://neetcode.io/practice' }] },
+  { id: 't5', name: 'System Design Fundamentals', category: 'System Design', resources: [{ label: 'System Design Primer (GitHub)', url: 'https://github.com/donnemartin/system-design-primer' }] },
+  { id: 't6', name: 'Docker & Kubernetes Basics', category: 'Cloud & DevOps', resources: [{ label: 'Docker Docs — Get Started', url: 'https://docs.docker.com/get-started/' }] },
+  { id: 't7', name: 'AWS Machine Learning – Specialty prep', category: 'Cloud & DevOps', resources: [{ label: 'AWS Skill Builder', url: 'https://skillbuilder.aws/' }] },
+  { id: 't8', name: 'Advanced SQL', category: 'Data Engineering', resources: [{ label: 'Mode SQL Tutorial', url: 'https://mode.com/sql-tutorial/' }] },
+  { id: 't9', name: 'Databricks Data Engineer Associate prep', category: 'Data Engineering', resources: [{ label: 'Databricks Academy', url: 'https://www.databricks.com/learn/training/catalog' }] },
+  { id: 't10', name: 'MLOps Fundamentals', category: 'Machine Learning', resources: [{ label: 'Made With ML', url: 'https://madewithml.com/' }] },
+  { id: 't11', name: 'Deep Learning Refresher', category: 'Machine Learning', resources: [{ label: 'DeepLearning.AI', url: 'https://www.deeplearning.ai/' }] },
+  { id: 't12', name: 'Behavioral Interview Prep (STAR method)', category: 'Interview Skills', resources: [{ label: 'The Muse — STAR Method', url: 'https://www.themuse.com/advice/star-interview-method' }] },
+];
+
+// ============================================================
+// CERTIFICATION ROADMAP — sequenced, each builds on the last
+// ============================================================
+const CERT_ROADMAP = [
+  {
+    id: 'c1', title: 'AWS Certified Machine Learning – Specialty',
+    why: 'A strong next step once you have cloud fundamentals down. Signals you can operationalize ML in production, not just train models — a meaningful jump past entry-level cloud certs.',
+    url: 'https://aws.amazon.com/certification/certified-machine-learning-specialty/',
+  },
+  {
+    id: 'c2', title: 'Databricks Certified Data Engineer Associate',
+    why: 'Validates hands-on Apache Spark experience with a name recruiters in data engineering roles specifically search for.',
+    url: 'https://www.databricks.com/learn/certification/data-engineer-associate',
+  },
+  {
+    id: 'c3', title: 'AWS Certified Solutions Architect – Associate',
+    why: 'Broadens cloud credibility past ML-specific scope — the most widely recognized AWS associate-level cert among recruiters generally.',
+    url: 'https://aws.amazon.com/certification/certified-solutions-architect-associate/',
+  },
+  {
+    id: 'c4', title: 'Microsoft Certified: Azure Data Engineer Associate',
+    why: 'Diversifies beyond AWS-only. Many enterprises — especially finance and consulting firms — run on Azure.',
+    url: 'https://learn.microsoft.com/en-us/credentials/certifications/azure-data-engineer/',
+  },
+  {
+    id: 'c5', title: 'Deep Learning Specialization (DeepLearning.AI)',
+    why: 'A widely recognized, name-brand deep learning credential. Good to bank last, once the faster-ROI cloud/data certs are already done.',
+    url: 'https://www.deeplearning.ai/courses/deep-learning-specialization/',
+  },
+];
+
+// ============================================================
+// DAILY RECURRING CHECKLIST — resets automatically each day
+// ============================================================
+const DAILY_TASKS = [
+  { id: 'd1', label: 'Apply to 20 jobs today', auto: true },
+  { id: 'd2', label: '30-60 min learning or DSA practice', auto: false },
+  { id: 'd3', label: 'Follow up on any application 7+ days old with no response', auto: false },
+  { id: 'd4', label: 'One networking action — message an alum, recruiter, or contact', auto: false },
+  { id: 'd5', label: 'Log everything added today in this tool', auto: false },
+];
+
+
+let applications = [];
+let topics = [];
+let syncStatus = { resume: null, portfolio: null, linkedin: null };
+let unsyncedCompletions = [];
+let documents = { clean: '', raw: '' };
+let currentDoc = 'clean';
+let checklistState = { date: null, checks: {} };
+let profile = {};
+let certStatuses = {};
+let targetCompanies = [];
+
+const CLEAN_RESUME_TEXT = `Your clean, ATS-ready resume goes here.
+
+Use "Import from Resume" in the Profile tab to pull in text from a PDF/DOCX, or just paste/type it directly into this box and click Save.`;
+
+const RAW_DUMP_TEXT = `This is your space for the full, unfiltered version of everything about your background — every project, every certification, every detail, even things too minor for the actual resume.
+
+Use "Import from Resume" in the Profile tab to auto-fill this from an uploaded file, or paste it in yourself.`;
+
+// ============================================================
+// INIT
+// ============================================================
+async function init() {
+  applications = await loadData('applications', []);
+  const learningData = await loadData('learning', { topics: DEFAULT_TOPICS.map(t => ({ ...t, status: 'not-started', custom: false })) });
+  topics = learningData.topics || DEFAULT_TOPICS.map(t => ({ ...t, status: 'not-started', custom: false }));
+  syncStatus = await loadData('syncStatus', { resume: null, portfolio: null, linkedin: null });
+  unsyncedCompletions = await loadData('unsyncedCompletions', []);
+  documents = await loadData('documents', { clean: CLEAN_RESUME_TEXT, raw: RAW_DUMP_TEXT, cleanSaved: null, rawSaved: null });
+  if (!documents.clean) documents.clean = CLEAN_RESUME_TEXT;
+  if (!documents.raw) documents.raw = RAW_DUMP_TEXT;
+
+  checklistState = await loadData('checklist', { date: null, checks: {} });
+  if (checklistState.date !== todayISO()) {
+    checklistState = { date: todayISO(), checks: {} };
+    await saveData('checklist', checklistState);
+  }
+
+  certStatuses = await loadData('certRoadmap', {});
+  profile = await loadData('profile', null);
+  if (!profile) { profile = { ...DEFAULT_PROFILE }; await saveData('profile', profile); }
+
+  targetCompanies = await loadData('targetCompanies', null);
+  if (!targetCompanies) { targetCompanies = DEFAULT_TARGETS.map(t => ({ ...t })); await saveData('targetCompanies', targetCompanies); }
+
+  renderDashboard();
+  renderApplications();
+  renderTopics();
+  renderRoadmap();
+  renderDoc();
+  renderChecklist();
+  renderProfile();
+  renderTargets();
+}
+
+// ============================================================
+// TAB SWITCHING
+// ============================================================
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function renderDashboard() {
+  const today = todayISO();
+  const todayCount = applications.filter(a => a.date === today).length;
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6);
+  const weekCount = applications.filter(a => new Date(a.date) >= weekAgo).length;
+  const interviewCount = applications.filter(a => a.status === 'Interview' || a.status === 'Offer').length;
+
+  document.getElementById('today-count').textContent = todayCount;
+  document.getElementById('week-count').textContent = weekCount;
+  document.getElementById('total-count').textContent = applications.length;
+  document.getElementById('interview-count').textContent = interviewCount;
+  const followupCount = applications.filter(a => a.status === 'Applied' && daysAgo(a.date) >= 7).length;
+  document.getElementById('followup-count').textContent = followupCount;
+
+  const circumference = 226;
+  const pct = Math.min(todayCount / 20, 1);
+  document.getElementById('ring-progress').style.strokeDashoffset = circumference - pct * circumference;
+
+  // Reminder banner
+  const banner = document.getElementById('reminder-banner');
+  if (unsyncedCompletions.length > 0) {
+    banner.innerHTML = `<div class="banner">
+      <div class="msg"><strong>${unsyncedCompletions.length} completed topic${unsyncedCompletions.length > 1 ? 's' : ''}</strong> not yet reflected in your materials: ${unsyncedCompletions.map(c => c.name).join(', ')}.</div>
+      <button class="btn-primary btn-sm" onclick="document.querySelector('[data-tab=documents]').click()">Go update</button>
+    </div>`;
+  } else {
+    banner.innerHTML = '';
+  }
+
+  renderSyncStatus();
+  renderChecklist();
+}
+
+function renderSyncStatus() {
+  const card = document.getElementById('sync-status-card');
+  const items = [
+    { key: 'resume', label: 'Resume' },
+    { key: 'portfolio', label: 'Portfolio' },
+    { key: 'linkedin', label: 'LinkedIn' },
+  ];
+  card.innerHTML = items.map(item => {
+    const d = syncStatus[item.key];
+    const age = daysAgo(d);
+    const dateLabel = d ? `Last updated ${d} (${age === 0 ? 'today' : age + 'd ago'})` : 'Never marked updated';
+    const warn = age > 14 ? ' style="color:#F5A524;"' : '';
+    return `<div class="sync-row">
+      <div class="sync-name">${item.label}</div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span class="sync-date"${warn}>${dateLabel}</span>
+        <button class="btn-secondary btn-sm" onclick="markSynced('${item.key}')">Mark updated today</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function markSynced(key) {
+  syncStatus[key] = todayISO();
+  await saveData('syncStatus', syncStatus);
+  if (unsyncedCompletions.length > 0) {
+    unsyncedCompletions = [];
+    await saveData('unsyncedCompletions', unsyncedCompletions);
+  }
+  renderDashboard();
+}
+
+// ============================================================
+// APPLICATIONS
+// ============================================================
+function renderApplications() {
+  const tbody = document.getElementById('applications-table');
+  const empty = document.getElementById('applications-empty');
+  if (applications.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  const sorted = [...applications].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  tbody.innerHTML = sorted.map(a => {
+    const needsFollowup = a.status === 'Applied' && daysAgo(a.date) >= 7;
+    return `
+    <tr>
+      <td>${a.date}</td>
+      <td>${escapeHtml(a.company)}</td>
+      <td>${escapeHtml(a.role)}${a.link ? ` <a href="${escapeHtml(a.link)}" target="_blank" style="color:var(--accent);">↗</a>` : ''}</td>
+      <td>${a.source}</td>
+      <td>${a.sponsor}</td>
+      <td><span class="status-pill status-${a.status}">${a.status}</span>${needsFollowup ? '<span class="followup-badge">FOLLOW UP</span>' : ''}</td>
+      <td><button class="btn-danger" onclick="deleteApplication('${a.id}')">Delete</button></td>
+    </tr>
+  `;
+  }).join('');
+}
+
+async function quickAdd() {
+  const company = document.getElementById('qa-company').value.trim();
+  if (!company) { alert('Enter a company name.'); return; }
+  const entry = {
+    id: 'a' + Date.now(), date: todayISO(), company, role: '',
+    link: '', source: 'Job Board', sponsor: 'Unknown', status: 'Applied', notes: '',
+  };
+  applications.push(entry);
+  await saveData('applications', applications);
+  document.getElementById('qa-company').value = '';
+  renderApplications();
+  renderDashboard();
+}
+
+async function addApplication() {
+  const company = document.getElementById('f-company').value.trim();
+  const role = document.getElementById('f-role').value.trim();
+  if (!company || !role) { alert('Company and role are required.'); return; }
+  const entry = {
+    id: 'a' + Date.now(),
+    date: todayISO(),
+    company, role,
+    link: document.getElementById('f-link').value.trim(),
+    source: document.getElementById('f-source').value,
+    sponsor: document.getElementById('f-sponsor').value,
+    status: document.getElementById('f-status').value,
+    notes: document.getElementById('f-notes').value.trim(),
+  };
+  applications.push(entry);
+  await saveData('applications', applications);
+  ['f-company', 'f-role', 'f-link', 'f-notes'].forEach(id => document.getElementById(id).value = '');
+  renderApplications();
+  renderDashboard();
+}
+
+async function deleteApplication(id) {
+  applications = applications.filter(a => a.id !== id);
+  await saveData('applications', applications);
+  renderApplications();
+  renderDashboard();
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// ============================================================
+// LEARNING
+// ============================================================
+function renderTopics() {
+  const categories = {};
+  topics.forEach(t => {
+    if (!categories[t.category]) categories[t.category] = [];
+    categories[t.category].push(t);
+  });
+
+  const list = document.getElementById('topics-list');
+  list.innerHTML = Object.keys(categories).map(cat => `
+    <h2 class="section-title">${escapeHtml(cat)}<div class="rule"></div></h2>
+    ${categories[cat].map(t => `
+      <div class="topic-card">
+        <div class="topic-head">
+          <div>
+            <div class="topic-name">${escapeHtml(t.name)}</div>
+          </div>
+          <select class="status-select" onchange="setTopicStatus('${t.id}', this.value)">
+            <option value="not-started" ${t.status === 'not-started' ? 'selected' : ''}>Not started</option>
+            <option value="in-progress" ${t.status === 'in-progress' ? 'selected' : ''}>In progress</option>
+            <option value="completed" ${t.status === 'completed' ? 'selected' : ''}>Completed</option>
+          </select>
+        </div>
+        ${t.resources && t.resources.length ? `<div class="topic-sources">${t.resources.map(r => `<a href="${escapeHtml(r.url)}" target="_blank">${escapeHtml(r.label)} ↗</a>`).join('')}</div>` : ''}
+      </div>
+    `).join('')}
+  `).join('');
+}
+
+async function setTopicStatus(id, status) {
+  const t = topics.find(x => x.id === id);
+  const wasCompleted = t.status === 'completed';
+  t.status = status;
+  await saveData('learning', { topics });
+
+  if (status === 'completed' && !wasCompleted) {
+    unsyncedCompletions.push({ name: t.name, date: todayISO() });
+    await saveData('unsyncedCompletions', unsyncedCompletions);
+  }
+  renderDashboard();
+}
+
+async function addTopic() {
+  const name = document.getElementById('lt-name').value.trim();
+  const category = document.getElementById('lt-category').value.trim() || 'Custom';
+  const url = document.getElementById('lt-url').value.trim();
+  if (!name) { alert('Topic name is required.'); return; }
+  topics.push({
+    id: 'custom' + Date.now(), name, category,
+    resources: url ? [{ label: 'Source', url }] : [],
+    status: 'not-started', custom: true,
+  });
+  await saveData('learning', { topics });
+  ['lt-name', 'lt-category', 'lt-url'].forEach(id => document.getElementById(id).value = '');
+  renderTopics();
+}
+
+// ============================================================
+// RESUME IMPORT (client-side text extraction, no backend/AI)
+// ============================================================
+async function extractPdfText(arrayBuffer) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let text = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(it => it.str).join(' ') + '\n';
+  }
+  return text;
+}
+
+async function extractDocxText(arrayBuffer) {
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return result.value;
+}
+
+async function handleResumeUpload() {
+  const fileInput = document.getElementById('resume-upload');
+  const statusEl = document.getElementById('resume-upload-status');
+  const file = fileInput.files[0];
+  if (!file) { statusEl.textContent = 'Choose a PDF or DOCX file first.'; return; }
+
+  statusEl.textContent = 'Extracting...';
+  try {
+    const buf = await file.arrayBuffer();
+    let text = '';
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith('.pdf')) {
+      text = await extractPdfText(buf);
+    } else if (lower.endsWith('.docx')) {
+      text = await extractDocxText(buf);
+    } else {
+      statusEl.textContent = 'Please upload a .pdf or .docx file.';
+      return;
+    }
+
+    documents.raw = text;
+    documents.rawSaved = todayISO();
+    await saveData('documents', documents);
+
+    const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+    const phoneMatch = text.match(/(\+?\d[\d\-\s().]{7,}\d)/);
+    let filled = [];
+    if (emailMatch && !profile.email) { profile.email = emailMatch[0]; filled.push('email'); }
+    if (phoneMatch && !profile.phone) { profile.phone = phoneMatch[0].trim(); filled.push('phone'); }
+    if (filled.length) await saveData('profile', profile);
+
+    statusEl.textContent = `Done — text extracted into Documents > Raw Data Dump${filled.length ? ` (auto-filled: ${filled.join(', ')})` : ''}. Review and organize it there.`;
+    renderProfile();
+    if (currentDoc === 'raw') renderDoc();
+  } catch (e) {
+    statusEl.textContent = 'Could not read that file: ' + e.message;
+  }
+}
+
+// ============================================================
+// TARGET COMPANIES
+// ============================================================
+function renderTargets() {
+  const tbody = document.getElementById('targets-table');
+  tbody.innerHTML = targetCompanies.map((t, i) => `
+    <tr>
+      <td>${escapeHtml(t.company)}</td>
+      <td>${t.track}</td>
+      <td style="text-align:center;"><input type="checkbox" ${t.applied ? 'checked' : ''} onchange="targetCompanies[${i}].applied = this.checked" style="width:16px; height:16px; accent-color:var(--accent);" /></td>
+      <td><input value="${escapeHtml(t.referral)}" placeholder="name" onchange="targetCompanies[${i}].referral = this.value" /></td>
+      <td><input value="${escapeHtml(t.notes)}" placeholder="notes" onchange="targetCompanies[${i}].notes = this.value" /></td>
+    </tr>
+  `).join('');
+}
+
+async function saveTargets() {
+  await saveData('targetCompanies', targetCompanies);
+  document.getElementById('targets-saved').textContent = `Saved ${todayISO()}`;
+}
+
+// ============================================================
+// DAILY CHECKLIST
+// ============================================================
+function renderChecklist() {
+  const todayCount = applications.filter(a => a.date === todayISO()).length;
+  const card = document.getElementById('checklist-card');
+  card.innerHTML = DAILY_TASKS.map(task => {
+    const autoChecked = task.auto && todayCount >= 20;
+    const checked = autoChecked || !!checklistState.checks[task.id];
+    return `<div class="checklist-item ${checked ? 'done' : ''}">
+      <input type="checkbox" id="chk-${task.id}" ${checked ? 'checked' : ''} ${task.auto ? 'disabled' : ''} onchange="toggleCheck('${task.id}', this.checked)" />
+      <label for="chk-${task.id}">${escapeHtml(task.label)}${task.auto ? ' (auto-tracked from Applications)' : ''}</label>
+    </div>`;
+  }).join('');
+}
+
+async function toggleCheck(id, checked) {
+  checklistState.checks[id] = checked;
+  await saveData('checklist', checklistState);
+  renderChecklist();
+}
+
+// ============================================================
+// CERTIFICATION ROADMAP
+// ============================================================
+function renderRoadmap() {
+  const card = document.getElementById('roadmap-card');
+  card.innerHTML = CERT_ROADMAP.map((c, i) => {
+    const status = certStatuses[c.id] || 'not-started';
+    return `<div class="roadmap-item">
+      <div class="roadmap-num">${i + 1}</div>
+      <div class="roadmap-body">
+        <div class="roadmap-title">${escapeHtml(c.title)}</div>
+        <div class="roadmap-why">${escapeHtml(c.why)}</div>
+        <div class="roadmap-foot">
+          <a href="${escapeHtml(c.url)}" target="_blank" style="color:var(--accent); font-size:12.5px; text-decoration:none;">Official info ↗</a>
+          <select class="status-select" onchange="setCertStatus('${c.id}', this.value)">
+            <option value="not-started" ${status === 'not-started' ? 'selected' : ''}>Not started</option>
+            <option value="in-progress" ${status === 'in-progress' ? 'selected' : ''}>In progress</option>
+            <option value="completed" ${status === 'completed' ? 'selected' : ''}>Completed</option>
+          </select>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function setCertStatus(id, status) {
+  const wasCompleted = certStatuses[id] === 'completed';
+  certStatuses[id] = status;
+  await saveData('certRoadmap', certStatuses);
+
+  if (status === 'completed' && !wasCompleted) {
+    const cert = CERT_ROADMAP.find(c => c.id === id);
+    unsyncedCompletions.push({ name: cert.title, date: todayISO() });
+    await saveData('unsyncedCompletions', unsyncedCompletions);
+  }
+  renderDashboard();
+}
+
+// ============================================================
+// PROFILE
+// ============================================================
+const PROFILE_FIELDS = ['name', 'location', 'phone', 'email', 'portfolio', 'github', 'linkedin', 'titles', 'locations', 'pitch', 'achievements', 'notes'];
+
+function renderProfile() {
+  PROFILE_FIELDS.forEach(f => {
+    const el = document.getElementById('p-' + f);
+    if (el) el.value = profile[f] || '';
+  });
+  document.getElementById('profile-saved').textContent = profile.savedAt ? `Last saved ${profile.savedAt}` : '';
+}
+
+async function saveProfile() {
+  PROFILE_FIELDS.forEach(f => {
+    const el = document.getElementById('p-' + f);
+    if (el) profile[f] = el.value;
+  });
+  profile.savedAt = todayISO();
+  await saveData('profile', profile);
+  renderProfile();
+}
+
+
+function switchDoc(which) {
+  currentDoc = which;
+  document.querySelectorAll('.doc-tab').forEach(b => b.classList.toggle('active', b.dataset.doc === which));
+  renderDoc();
+}
+
+function renderDoc() {
+  document.getElementById('doc-textarea').value = documents[currentDoc] || '';
+  const savedKey = currentDoc + 'Saved';
+  const saved = documents[savedKey];
+  document.getElementById('doc-last-saved').textContent = saved ? `Last saved ${saved}` : 'Not yet edited';
+}
+
+async function saveDoc() {
+  documents[currentDoc] = document.getElementById('doc-textarea').value;
+  documents[currentDoc + 'Saved'] = todayISO();
+  await saveData('documents', documents);
+  renderDoc();
+}
+
+function downloadDoc(format) {
+  const text = document.getElementById('doc-textarea').value;
+  const namePart = (profile.name || 'Resume').replace(/[^a-zA-Z0-9]+/g, '_');
+  const baseName = currentDoc === 'clean' ? `${namePart}_Clean` : `${namePart}_RawDump`;
+
+  if (format === 'doc') {
+    const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head><meta charset='utf-8'><title>${baseName}</title>
+      <style>body{font-family:Calibri,Arial,sans-serif; font-size:11pt; white-space:pre-wrap;}</style></head>
+      <body>${escaped}</body></html>`;
+    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = baseName + '.doc';
+    a.click();
+    URL.revokeObjectURL(url);
+  } else {
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = baseName + '.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
+</script>
+</body>
+</html>
