@@ -72,6 +72,7 @@
     font-family: 'IBM Plex Sans', sans-serif; cursor: pointer; border: none; border-radius: 7px;
     padding: 8px 14px; font-size: 13px; font-weight: 600;
   }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
   .btn-primary { background: var(--accent); color: #06110F; }
   .btn-primary:hover { opacity: 0.9; }
   .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
@@ -111,7 +112,7 @@
   .doc-tab.active { color: var(--accent); border-color: var(--accent-dim); }
   textarea.doc-view { min-height: 420px; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; line-height: 1.6; white-space: pre; }
 
-  .sync-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .sync-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 8px; }
   .sync-row:last-child { border-bottom: none; }
   .sync-name { font-weight: 600; font-size: 14px; }
   .sync-date { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-muted); }
@@ -155,7 +156,12 @@
   .auth-toggle { text-align: center; margin-top: 14px; font-size: 12.5px; color: var(--text-muted); }
   .auth-toggle a { color: var(--accent); cursor: pointer; text-decoration: none; }
   .auth-error { color: var(--danger); font-size: 12.5px; margin-top: 8px; min-height: 16px; }
+  .auth-success { background: #14251F; border: 1px solid var(--accent-dim); color: var(--accent); border-radius: 6px; padding: 10px 12px; font-size: 12.5px; margin-bottom: 14px; }
   #app-root { display: none; }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(4,7,10,0.7); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay.open { display: flex; }
+  .danger-card { border-color: #3A2222; }
 </style>
 </head>
 <body>
@@ -164,15 +170,39 @@
   <div class="auth-card">
     <h1>Job Search HQ</h1>
     <p id="auth-subtitle">Sign in to sync your data across every device.</p>
+    <div class="auth-success" id="auth-success" style="display:none;"></div>
     <div class="auth-field"><input id="auth-email" type="email" placeholder="Email" /></div>
     <div class="auth-field"><input id="auth-password" type="password" placeholder="Password" /></div>
+    <div class="auth-field" id="auth-password-confirm-wrap" style="display:none;"><input id="auth-password-confirm" type="password" placeholder="Confirm password" /></div>
     <button class="btn-primary" style="width:100%;" onclick="authSubmit()" id="auth-submit-btn">Sign In</button>
+    <div style="text-align:right; margin-top:8px;">
+      <a onclick="forgotPassword()" id="forgot-password-link" style="color:var(--text-muted); font-size:12px; cursor:pointer; text-decoration:none;">Forgot password?</a>
+    </div>
     <div class="auth-error" id="auth-error"></div>
     <div style="display:flex; align-items:center; gap:10px; margin:16px 0; color:var(--text-muted); font-size:12px;">
       <div style="flex:1; height:1px; background:var(--border);"></div>OR<div style="flex:1; height:1px; background:var(--border);"></div>
     </div>
-    <button class="btn-secondary" style="width:100%;" onclick="signInWithGoogle()">Sign in with Google</button>
+    <button class="btn-secondary" style="width:100%;" onclick="signInWithGoogle()" id="google-signin-btn">Sign in with Google</button>
     <div class="auth-toggle" id="auth-toggle-wrap">First time here? <a onclick="toggleAuthMode()">Create an account</a></div>
+  </div>
+</div>
+
+<!-- DELETE ACCOUNT CONFIRMATION MODAL -->
+<div class="modal-overlay" id="delete-account-overlay">
+  <div class="auth-card" style="max-width:400px;">
+    <h1 style="color:var(--danger);">Delete account?</h1>
+    <p>This permanently deletes your account and everything stored in Job Search HQ — applications, learning progress, documents, profile, and any uploaded resume file. This can't be undone.</p>
+    <p style="font-size:12.5px; color:var(--text-muted); margin-bottom:8px;">Type <strong>DELETE</strong> below to confirm.</p>
+    <div class="auth-field"><input id="delete-confirm-input" placeholder="Type DELETE" /></div>
+    <div id="reauth-section" style="display:none;">
+      <p style="font-size:12.5px; color:var(--text-muted); margin:0 0 8px;">For your security, re-enter your password to continue.</p>
+      <div class="auth-field"><input id="reauth-password" type="password" placeholder="Current password" /></div>
+    </div>
+    <div class="auth-error" id="delete-account-error"></div>
+    <div style="display:flex; gap:10px; margin-top:6px;">
+      <button class="btn-secondary" style="flex:1;" onclick="closeDeleteAccount()">Cancel</button>
+      <button style="flex:1; background:var(--danger); color:#1a0a0a; padding:8px 14px; font-size:13px;" id="confirm-delete-btn" onclick="confirmDeleteAccount()">Delete permanently</button>
+    </div>
   </div>
 </div>
 
@@ -332,12 +362,13 @@
   <div class="panel" id="panel-profile">
     <h2 class="section-title" style="margin-top:0;">Import from Resume<div class="rule"></div></h2>
     <div class="card" style="margin-bottom:20px;">
-      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload a PDF or DOCX resume. This pulls the raw text into your Documents tab and auto-fills email/phone if found — it's a starting point, not a finished profile. Review and edit everything after.</p>
+      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload a PDF or DOCX resume. This pulls the text into your Documents tab (line breaks preserved) and auto-fills email/phone if found — it's a starting point, not a finished profile. Review and edit everything after. The original file is also saved here so you can re-download it later.</p>
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
         <input type="file" id="resume-upload" accept=".pdf,.docx" style="flex:1; min-width:200px;" />
-        <button class="btn-primary" onclick="handleResumeUpload()">Extract</button>
+        <button class="btn-primary" onclick="handleResumeUpload()" id="resume-extract-btn">Extract</button>
       </div>
       <div style="font-size:12.5px; color:var(--accent); margin-top:8px;" id="resume-upload-status"></div>
+      <div id="resume-file-current"></div>
     </div>
 
     <h2 class="section-title">Contact & Links<div class="rule"></div></h2>
@@ -378,6 +409,12 @@
 
     <button class="btn-primary" onclick="saveProfile()">Save profile</button>
     <span class="sync-date" id="profile-saved" style="margin-left:12px;"></span>
+
+    <h2 class="section-title">Danger Zone<div class="rule"></div></h2>
+    <div class="card danger-card" style="margin-bottom:20px;">
+      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Permanently delete your account and everything stored here — applications, learning progress, documents, profile, and any uploaded resume file. This cannot be undone.</p>
+      <button style="background:transparent; color:var(--danger); border:1px solid #3A2222; padding:8px 14px; font-size:13px;" onclick="openDeleteAccount()">Delete my account</button>
+    </div>
   </div>
 
 </div>
@@ -387,6 +424,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
 <!-- Resume text extraction -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -407,32 +445,84 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
+const storage = firebase.storage();
 let uid = null;
 let cachedDoc = {};
 let isSignUpMode = false;
 
-function toggleAuthMode() {
-  isSignUpMode = !isSignUpMode;
+function setAuthMode(signUp) {
+  isSignUpMode = signUp;
   document.getElementById('auth-submit-btn').textContent = isSignUpMode ? 'Create Account' : 'Sign In';
-  document.getElementById('auth-subtitle').textContent = isSignUpMode ? 'Create your account — use the same one on every device.' : 'Sign in to sync your data across every device.';
+  document.getElementById('auth-subtitle').textContent = isSignUpMode
+    ? 'Create your account — use the same one on every device.'
+    : 'Sign in to sync your data across every device.';
   document.getElementById('auth-toggle-wrap').innerHTML = isSignUpMode
     ? 'Already have an account? <a onclick="toggleAuthMode()">Sign in</a>'
     : 'First time here? <a onclick="toggleAuthMode()">Create an account</a>';
+  document.getElementById('auth-password-confirm-wrap').style.display = isSignUpMode ? 'block' : 'none';
+  document.getElementById('forgot-password-link').style.display = isSignUpMode ? 'none' : 'inline';
+}
+
+function toggleAuthMode() {
+  setAuthMode(!isSignUpMode);
   document.getElementById('auth-error').textContent = '';
+  document.getElementById('auth-success').style.display = 'none';
 }
 
 async function authSubmit() {
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value;
   const errEl = document.getElementById('auth-error');
+  const successEl = document.getElementById('auth-success');
+  const btn = document.getElementById('auth-submit-btn');
   errEl.textContent = '';
+  successEl.style.display = 'none';
+
   if (!email || !password) { errEl.textContent = 'Email and password required.'; return; }
+
+  if (isSignUpMode) {
+    const confirmVal = document.getElementById('auth-password-confirm').value;
+    if (password.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; return; }
+    if (password !== confirmVal) { errEl.textContent = 'Passwords do not match.'; return; }
+  }
+
+  btn.disabled = true;
+  btn.textContent = isSignUpMode ? 'Creating account...' : 'Signing in...';
+
   try {
     if (isSignUpMode) {
       await auth.createUserWithEmailAndPassword(email, password);
+      // Firebase auto-signs-in new users — sign back out so this behaves like a
+      // normal "create account -> confirmation -> sign in" flow instead of
+      // silently dropping the person straight into the app.
+      await auth.signOut();
+      setAuthMode(false);
+      document.getElementById('auth-password').value = '';
+      document.getElementById('auth-password-confirm').value = '';
+      successEl.textContent = 'Account created! Sign in below to get started.';
+      successEl.style.display = 'block';
     } else {
       await auth.signInWithEmailAndPassword(email, password);
     }
+  } catch (e) {
+    errEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = isSignUpMode ? 'Create Account' : 'Sign In';
+  }
+}
+
+async function forgotPassword() {
+  const email = document.getElementById('auth-email').value.trim();
+  const errEl = document.getElementById('auth-error');
+  const successEl = document.getElementById('auth-success');
+  errEl.textContent = '';
+  successEl.style.display = 'none';
+  if (!email) { errEl.textContent = 'Enter your email above first, then click "Forgot password?".'; return; }
+  try {
+    await auth.sendPasswordResetEmail(email);
+    successEl.textContent = `Password reset email sent to ${email}. Check your inbox.`;
+    successEl.style.display = 'block';
   } catch (e) {
     errEl.textContent = e.message;
   }
@@ -444,12 +534,21 @@ function signOutUser() {
 
 async function signInWithGoogle() {
   const errEl = document.getElementById('auth-error');
+  const successEl = document.getElementById('auth-success');
+  const btn = document.getElementById('google-signin-btn');
   errEl.textContent = '';
+  successEl.style.display = 'none';
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
     await auth.signInWithPopup(provider);
   } catch (e) {
     errEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
   }
 }
 
@@ -491,6 +590,83 @@ const daysAgo = (isoDate) => {
 };
 
 // ============================================================
+// DELETE ACCOUNT
+// ============================================================
+function openDeleteAccount() {
+  document.getElementById('delete-confirm-input').value = '';
+  document.getElementById('reauth-password').value = '';
+  document.getElementById('reauth-section').style.display = 'none';
+  document.getElementById('delete-account-error').textContent = '';
+  document.getElementById('delete-account-overlay').classList.add('open');
+}
+
+function closeDeleteAccount() {
+  document.getElementById('delete-account-overlay').classList.remove('open');
+}
+
+async function deleteAllUserData(userId) {
+  await db.collection('users').doc(userId).collection('appData').doc('main').delete().catch(() => {});
+  try {
+    const listRes = await storage.ref(`resumes/${userId}`).listAll();
+    await Promise.all(listRes.items.map(item => item.delete().catch(() => {})));
+  } catch (e) {
+    // No files, or Storage isn't set up for this project — safe to ignore.
+  }
+}
+
+async function confirmDeleteAccount() {
+  const confirmInput = document.getElementById('delete-confirm-input').value.trim();
+  const errEl = document.getElementById('delete-account-error');
+  const btn = document.getElementById('confirm-delete-btn');
+  errEl.textContent = '';
+
+  if (confirmInput !== 'DELETE') { errEl.textContent = 'Type DELETE (all caps) to confirm.'; return; }
+
+  const user = auth.currentUser;
+  if (!user) { errEl.textContent = 'You are not signed in.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Deleting...';
+
+  try {
+    await deleteAllUserData(user.uid);
+    await user.delete();
+    closeDeleteAccount();
+    // onAuthStateChanged fires automatically once the user is gone and shows the sign-in screen.
+  } catch (e) {
+    if (e.code === 'auth/requires-recent-login') {
+      const providerId = user.providerData[0] && user.providerData[0].providerId;
+      try {
+        if (providerId === 'google.com') {
+          await user.reauthenticateWithPopup(new firebase.auth.GoogleAuthProvider());
+        } else {
+          const pw = document.getElementById('reauth-password').value;
+          document.getElementById('reauth-section').style.display = 'block';
+          if (!pw) {
+            errEl.textContent = 'Enter your current password above, then click delete again.';
+            btn.disabled = false;
+            btn.textContent = 'Delete permanently';
+            return;
+          }
+          const cred = firebase.auth.EmailAuthProvider.credential(user.email, pw);
+          await user.reauthenticateWithCredential(cred);
+        }
+        await deleteAllUserData(user.uid);
+        await user.delete();
+        closeDeleteAccount();
+      } catch (e2) {
+        errEl.textContent = e2.message;
+      }
+    } else {
+      errEl.textContent = e.message;
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Delete permanently';
+  }
+}
+
+// ============================================================
 // TARGET COMPANIES (pre-researched OPT/H-1B sponsors)
 // ============================================================
 const DEFAULT_TARGETS = [
@@ -521,13 +697,12 @@ const DEFAULT_TARGETS = [
 ];
 
 // ============================================================
-// DEFAULT PROFILE (prefilled from your resume/portfolio)
+// DEFAULT PROFILE
 // ============================================================
 const DEFAULT_PROFILE = {
   name: '', location: '', phone: '', email: '', portfolio: '', github: '', linkedin: '',
   titles: '', locations: '', pitch: '', achievements: '', notes: '',
 };
-
 
 const DEFAULT_TOPICS = [
   { id: 't1', name: 'Arrays & Hashing', category: 'DSA & Coding Interviews', resources: [{ label: 'NeetCode 150', url: 'https://neetcode.io/practice' }] },
@@ -586,7 +761,6 @@ const DAILY_TASKS = [
   { id: 'd5', label: 'Log everything added today in this tool', auto: false },
 ];
 
-
 let applications = [];
 let topics = [];
 let syncStatus = { resume: null, portfolio: null, linkedin: null };
@@ -597,6 +771,7 @@ let checklistState = { date: null, checks: {} };
 let profile = {};
 let certStatuses = {};
 let targetCompanies = [];
+let resumeFile = null;
 
 const CLEAN_RESUME_TEXT = `Your clean, ATS-ready resume goes here.
 
@@ -631,6 +806,8 @@ async function init() {
 
   targetCompanies = await loadData('targetCompanies', null);
   if (!targetCompanies) { targetCompanies = DEFAULT_TARGETS.map(t => ({ ...t })); await saveData('targetCompanies', targetCompanies); }
+
+  resumeFile = await loadData('resumeFile', null);
 
   renderDashboard();
   renderApplications();
@@ -675,7 +852,6 @@ function renderDashboard() {
   const pct = Math.min(todayCount / 20, 1);
   document.getElementById('ring-progress').style.strokeDashoffset = circumference - pct * circumference;
 
-  // Reminder banner
   const banner = document.getElementById('reminder-banner');
   if (unsyncedCompletions.length > 0) {
     banner.innerHTML = `<div class="banner">
@@ -868,9 +1044,25 @@ async function extractPdfText(arrayBuffer) {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    text += content.items.map(it => it.str).join(' ') + '\n';
+
+    // Group text fragments into lines based on their vertical position instead
+    // of joining everything with spaces — otherwise the whole page collapses
+    // into one giant run-on line.
+    let lastY = null;
+    let line = '';
+    content.items.forEach(item => {
+      const y = item.transform[5];
+      if (lastY !== null && Math.abs(y - lastY) > 2) {
+        text += line.trim() + '\n';
+        line = '';
+      }
+      line += item.str + ' ';
+      lastY = y;
+    });
+    if (line.trim()) text += line.trim() + '\n';
+    text += '\n';
   }
-  return text;
+  return text.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 async function extractDocxText(arrayBuffer) {
@@ -878,24 +1070,55 @@ async function extractDocxText(arrayBuffer) {
   return result.value;
 }
 
+function renderResumeFile() {
+  const el = document.getElementById('resume-file-current');
+  if (!el) return;
+  if (!resumeFile) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="sync-row">
+    <div class="sync-name">${escapeHtml(resumeFile.name)}</div>
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <span class="sync-date">Uploaded ${resumeFile.uploadedAt}</span>
+      <a href="${escapeHtml(resumeFile.url)}" target="_blank" class="btn-secondary btn-sm" style="text-decoration:none; display:inline-block;">View / Download</a>
+      <button class="btn-danger" onclick="removeResumeFile()">Remove</button>
+    </div>
+  </div>`;
+}
+
+async function removeResumeFile() {
+  if (!resumeFile) return;
+  try {
+    await storage.ref(resumeFile.path).delete();
+  } catch (e) {
+    console.error('Could not delete stored file (may already be gone)', e);
+  }
+  resumeFile = null;
+  await saveData('resumeFile', null);
+  renderResumeFile();
+}
+
 async function handleResumeUpload() {
   const fileInput = document.getElementById('resume-upload');
   const statusEl = document.getElementById('resume-upload-status');
+  const btn = document.getElementById('resume-extract-btn');
   const file = fileInput.files[0];
   if (!file) { statusEl.textContent = 'Choose a PDF or DOCX file first.'; return; }
 
+  const lower = file.name.toLowerCase();
+  if (!lower.endsWith('.pdf') && !lower.endsWith('.docx')) {
+    statusEl.textContent = 'Please upload a .pdf or .docx file.';
+    return;
+  }
+
+  btn.disabled = true;
   statusEl.textContent = 'Extracting...';
+
   try {
     const buf = await file.arrayBuffer();
     let text = '';
-    const lower = file.name.toLowerCase();
     if (lower.endsWith('.pdf')) {
       text = await extractPdfText(buf);
-    } else if (lower.endsWith('.docx')) {
-      text = await extractDocxText(buf);
     } else {
-      statusEl.textContent = 'Please upload a .pdf or .docx file.';
-      return;
+      text = await extractDocxText(buf);
     }
 
     documents.raw = text;
@@ -909,11 +1132,34 @@ async function handleResumeUpload() {
     if (phoneMatch && !profile.phone) { profile.phone = phoneMatch[0].trim(); filled.push('phone'); }
     if (filled.length) await saveData('profile', profile);
 
-    statusEl.textContent = `Done — text extracted into Documents > Raw Data Dump${filled.length ? ` (auto-filled: ${filled.join(', ')})` : ''}. Review and organize it there.`;
+    // Save the actual file (not just its extracted text) so it can be
+    // re-downloaded later instead of disappearing after this session.
+    statusEl.textContent = 'Saving file...';
+    try {
+      const storagePath = `resumes/${uid}/${Date.now()}_${file.name}`;
+      const ref = storage.ref(storagePath);
+      await ref.put(file);
+      const url = await ref.getDownloadURL();
+      if (resumeFile && resumeFile.path) {
+        storage.ref(resumeFile.path).delete().catch(() => {});
+      }
+      resumeFile = { name: file.name, url, path: storagePath, uploadedAt: todayISO() };
+      await saveData('resumeFile', resumeFile);
+    } catch (storageErr) {
+      console.error('File upload failed (extracted text was still saved):', storageErr);
+    }
+
+    statusEl.textContent = `Done — text extracted into Documents > Raw Data Dump${filled.length ? ` (auto-filled: ${filled.join(', ')})` : ''}.`;
     renderProfile();
-    if (currentDoc === 'raw') renderDoc();
+    fileInput.value = '';
+
+    // Jump straight to the result instead of leaving the user to go find it.
+    document.querySelector('[data-tab=documents]').click();
+    switchDoc('raw');
   } catch (e) {
     statusEl.textContent = 'Could not read that file: ' + e.message;
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -1009,6 +1255,7 @@ function renderProfile() {
     if (el) el.value = profile[f] || '';
   });
   document.getElementById('profile-saved').textContent = profile.savedAt ? `Last saved ${profile.savedAt}` : '';
+  renderResumeFile();
 }
 
 async function saveProfile() {
@@ -1020,7 +1267,6 @@ async function saveProfile() {
   await saveData('profile', profile);
   renderProfile();
 }
-
 
 function switchDoc(which) {
   currentDoc = which;
@@ -1044,8 +1290,8 @@ async function saveDoc() {
 
 function downloadDoc(format) {
   const text = document.getElementById('doc-textarea').value;
-  const namePart = (profile.name || 'Resume').replace(/[^a-zA-Z0-9]+/g, '_');
-  const baseName = currentDoc === 'clean' ? `${namePart}_Clean` : `${namePart}_RawDump`;
+  const safeName = (profile.name || 'Resume').trim().replace(/[^a-z0-9]+/gi, '_') || 'Resume';
+  const baseName = currentDoc === 'clean' ? `${safeName}_Clean` : `${safeName}_RawDump`;
 
   if (format === 'doc') {
     const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
@@ -1070,7 +1316,6 @@ function downloadDoc(format) {
     URL.revokeObjectURL(url);
   }
 }
-
 </script>
 </body>
 </html>
