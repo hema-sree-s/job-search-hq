@@ -362,7 +362,7 @@
   <div class="panel" id="panel-profile">
     <h2 class="section-title" style="margin-top:0;">Import from Resume<div class="rule"></div></h2>
     <div class="card" style="margin-bottom:20px;">
-      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload a PDF or DOCX resume. This pulls the text into your Documents tab (line breaks preserved) and auto-fills email/phone if found — it's a starting point, not a finished profile. Review and edit everything after. The original file is also saved here so you can re-download it later.</p>
+      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload a PDF or DOCX resume. This pulls the text into your Documents tab (line breaks preserved) and auto-fills email/phone if found — it's a starting point, not a finished profile. Review and edit everything after. The original file (up to ~700KB) is also saved here so you can re-download it later.</p>
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
         <input type="file" id="resume-upload" accept=".pdf,.docx" style="flex:1; min-width:200px;" />
         <button class="btn-primary" onclick="handleResumeUpload()" id="resume-extract-btn">Extract</button>
@@ -424,7 +424,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
 <!-- Resume text extraction -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -445,7 +444,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
-const storage = firebase.storage();
 let uid = null;
 let cachedDoc = {};
 let isSignUpMode = false;
@@ -606,12 +604,7 @@ function closeDeleteAccount() {
 
 async function deleteAllUserData(userId) {
   await db.collection('users').doc(userId).collection('appData').doc('main').delete().catch(() => {});
-  try {
-    const listRes = await storage.ref(`resumes/${userId}`).listAll();
-    await Promise.all(listRes.items.map(item => item.delete().catch(() => {})));
-  } catch (e) {
-    // No files, or Storage isn't set up for this project — safe to ignore.
-  }
+  await db.collection('users').doc(userId).collection('appData').doc('resumeFile').delete().catch(() => {});
 }
 
 async function confirmDeleteAccount() {
@@ -807,7 +800,12 @@ async function init() {
   targetCompanies = await loadData('targetCompanies', null);
   if (!targetCompanies) { targetCompanies = DEFAULT_TARGETS.map(t => ({ ...t })); await saveData('targetCompanies', targetCompanies); }
 
-  resumeFile = await loadData('resumeFile', null);
+  try {
+    const resumeSnap = await db.collection('users').doc(uid).collection('appData').doc('resumeFile').get();
+    resumeFile = resumeSnap.exists ? resumeSnap.data() : null;
+  } catch (e) {
+    resumeFile = null;
+  }
 
   renderDashboard();
   renderApplications();
@@ -1046,23 +1044,33 @@ async function extractPdfText(arrayBuffer) {
     const content = await page.getTextContent();
 
     // Group text fragments into lines based on their vertical position instead
-    // of joining everything with spaces — otherwise the whole page collapses
-    // into one giant run-on line.
+    // of joining everything with spaces. The tolerance scales with each
+    // fragment's font size (item.height) instead of a fixed pixel value —
+    // a fixed tolerance was too strict and split normal same-line text
+    // (varying letter baselines, kerning, etc.) into separate lines.
     let lastY = null;
+    let lastHeight = 10;
     let line = '';
     content.items.forEach(item => {
       const y = item.transform[5];
-      if (lastY !== null && Math.abs(y - lastY) > 2) {
+      const height = item.height || Math.abs(item.transform[3]) || lastHeight;
+      const tolerance = Math.max(3, height * 0.6);
+      if (lastY !== null && Math.abs(y - lastY) > tolerance) {
         text += line.trim() + '\n';
         line = '';
       }
       line += item.str + ' ';
       lastY = y;
+      lastHeight = height;
     });
     if (line.trim()) text += line.trim() + '\n';
     text += '\n';
   }
-  return text.replace(/\n{3,}/g, '\n\n').trim();
+  return text
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 async function extractDocxText(arrayBuffer) {
@@ -1078,7 +1086,7 @@ function renderResumeFile() {
     <div class="sync-name">${escapeHtml(resumeFile.name)}</div>
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
       <span class="sync-date">Uploaded ${resumeFile.uploadedAt}</span>
-      <a href="${escapeHtml(resumeFile.url)}" target="_blank" class="btn-secondary btn-sm" style="text-decoration:none; display:inline-block;">View / Download</a>
+      <a href="${resumeFile.dataUrl}" download="${escapeHtml(resumeFile.name)}" class="btn-secondary btn-sm" style="text-decoration:none; display:inline-block;">Download</a>
       <button class="btn-danger" onclick="removeResumeFile()">Remove</button>
     </div>
   </div>`;
@@ -1087,14 +1095,27 @@ function renderResumeFile() {
 async function removeResumeFile() {
   if (!resumeFile) return;
   try {
-    await storage.ref(resumeFile.path).delete();
+    await db.collection('users').doc(uid).collection('appData').doc('resumeFile').delete();
   } catch (e) {
-    console.error('Could not delete stored file (may already be gone)', e);
+    console.error('Could not delete stored file record', e);
   }
   resumeFile = null;
-  await saveData('resumeFile', null);
   renderResumeFile();
 }
+
+function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Firestore documents cap out at 1MB total. Base64-encoding a file adds
+// ~37% overhead, so we cap the original file well under that to leave
+// headroom for the name/mimeType/date fields alongside it.
+const MAX_RESUME_FILE_BYTES = 700 * 1024;
 
 async function handleResumeUpload() {
   const fileInput = document.getElementById('resume-upload');
@@ -1133,23 +1154,29 @@ async function handleResumeUpload() {
     if (filled.length) await saveData('profile', profile);
 
     // Save the actual file (not just its extracted text) so it can be
-    // re-downloaded later instead of disappearing after this session.
-    statusEl.textContent = 'Saving file...';
-    try {
-      const storagePath = `resumes/${uid}/${Date.now()}_${file.name}`;
-      const ref = storage.ref(storagePath);
-      await ref.put(file);
-      const url = await ref.getDownloadURL();
-      if (resumeFile && resumeFile.path) {
-        storage.ref(resumeFile.path).delete().catch(() => {});
+    // re-downloaded later, using Firestore itself (no billing plan required)
+    // instead of Firebase Storage.
+    const extractedMsg = `Text extracted into Documents > Raw Data Dump${filled.length ? ` (auto-filled: ${filled.join(', ')})` : ''}.`;
+    let fileSaved = false;
+
+    if (file.size > MAX_RESUME_FILE_BYTES) {
+      statusEl.textContent = `${extractedMsg} Note: this file is ${Math.round(file.size / 1024)}KB, which is over the ${Math.round(MAX_RESUME_FILE_BYTES / 1024)}KB limit for saving a downloadable copy on the free plan. The text was still extracted above.`;
+    } else {
+      statusEl.textContent = 'Saving file...';
+      try {
+        const dataUrl = await fileToDataURL(file);
+        const fileRecord = { name: file.name, mimeType: file.type, dataUrl, uploadedAt: todayISO() };
+        await db.collection('users').doc(uid).collection('appData').doc('resumeFile').set(fileRecord);
+        resumeFile = fileRecord;
+        fileSaved = true;
+      } catch (saveErr) {
+        console.error('File save failed (extracted text was still saved):', saveErr);
       }
-      resumeFile = { name: file.name, url, path: storagePath, uploadedAt: todayISO() };
-      await saveData('resumeFile', resumeFile);
-    } catch (storageErr) {
-      console.error('File upload failed (extracted text was still saved):', storageErr);
+      statusEl.textContent = fileSaved
+        ? `${extractedMsg} File saved below for later download.`
+        : `${extractedMsg} Note: couldn't save the file itself for later download.`;
     }
 
-    statusEl.textContent = `Done — text extracted into Documents > Raw Data Dump${filled.length ? ` (auto-filled: ${filled.join(', ')})` : ''}.`;
     renderProfile();
     fileInput.value = '';
 
