@@ -1472,16 +1472,35 @@ async function extractDocxText(arrayBuffer) {
 async function convertDocxToPdfBlob(arrayBuffer) {
   const result = await mammoth.convertToHtml({ arrayBuffer });
   const container = document.createElement('div');
-  container.style.cssText = 'position:fixed; left:-9999px; top:0; width:700px; padding:36px; background:#fff; color:#111; font-family:Calibri,Arial,sans-serif; font-size:11pt; line-height:1.4;';
+  // IMPORTANT: html2canvas (used internally by html2pdf) frequently produces
+  // a blank capture when the source element is positioned far off-screen
+  // (e.g. left:-9999px) — a common way to "hide" content that actively
+  // breaks this specific rendering path. Keeping it inside the viewport at
+  // (0,0) but invisible via opacity avoids that failure mode.
+  container.style.cssText = 'position:fixed; top:0; left:0; width:700px; padding:36px; background:#fff; color:#111; font-family:Calibri,Arial,sans-serif; font-size:11pt; line-height:1.4; opacity:0; pointer-events:none; z-index:-1000;';
   container.innerHTML = result.value;
   document.body.appendChild(container);
   try {
-    return await html2pdf().from(container).set({
+    // Give the browser a couple of frames to actually paint the content
+    // before html2canvas captures it — capturing immediately after
+    // innerHTML assignment can race the layout/paint step.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    const blob = await html2pdf().from(container).set({
       margin: 10,
       filename: 'resume.pdf',
       html2canvas: { scale: 2 },
       jsPDF: { unit: 'pt', format: 'letter' },
     }).outputPdf('blob');
+
+    // A genuinely blank single-page PDF at this scale is reliably under
+    // ~2KB. If we land below that, something went wrong in rendering —
+    // surface it as a real failure instead of silently "succeeding" with
+    // an empty file.
+    if (!blob || blob.size < 2000) {
+      throw new Error('Generated PDF appears to be blank (rendering failed).');
+    }
+    return blob;
   } finally {
     document.body.removeChild(container);
   }
