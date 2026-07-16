@@ -228,11 +228,9 @@
 
   <!-- DASHBOARD -->
   <div class="panel active" id="panel-dashboard">
-    <div id="reminder-banner"></div>
-
     <h2 class="section-title" style="margin-top:0;">Today's Checklist<div class="rule"></div></h2>
     <div class="card" id="checklist-card" style="margin-bottom:16px;"></div>
-
+    <div id="reflection-section"></div>
 
     <div class="card">
       <div class="ring-wrap">
@@ -255,8 +253,8 @@
       <div class="card"><div class="stat-label">Interviews</div><div class="stat-value" id="interview-count">0</div></div>
     </div>
 
-    <h2 class="section-title">Sync Status<div class="rule"></div></h2>
-    <div class="card" id="sync-status-card"></div>
+    <h2 class="section-title">Keep In Sync<div class="rule"></div></h2>
+    <div class="card" id="sync-card"></div>
   </div>
 
   <!-- APPLICATIONS -->
@@ -327,6 +325,21 @@
     <p style="color:var(--text-muted); font-size:13px; margin-top:-8px;">Sequenced to build on what you already have — each one leverages the last. Ask Claude weekly if you want this reordered based on how interviews are going.</p>
     <div class="card" id="roadmap-card" style="margin-bottom:24px;"></div>
 
+    <h2 class="section-title">Certificates<div class="rule"></div></h2>
+    <div class="card" style="margin-bottom:24px;">
+      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Log any certificate you've completed — from the roadmap above or anywhere else. Adding one here automatically reminds you to update your resume, portfolio, and LinkedIn on the Dashboard.</p>
+      <div class="form-row">
+        <div><label>Certificate name</label><input id="cert-name" placeholder="e.g. AWS Cloud Practitioner" /></div>
+        <div><label>Issuer (optional)</label><input id="cert-issuer" placeholder="e.g. Amazon Web Services" /></div>
+        <div><label>Date earned</label><input id="cert-date" type="date" /></div>
+      </div>
+      <div class="form-row">
+        <div><label>Credential URL (optional)</label><input id="cert-url" placeholder="https://..." /></div>
+      </div>
+      <button class="btn-primary" onclick="addCertificate()">Add certificate</button>
+      <div id="certificates-list" style="margin-top:14px;"></div>
+    </div>
+
     <div class="card" style="margin-bottom:18px;">
       <h2 class="section-title" style="margin-top:0;">Add a custom topic<div class="rule"></div></h2>
       <div class="form-row">
@@ -362,9 +375,9 @@
   <div class="panel" id="panel-profile">
     <h2 class="section-title" style="margin-top:0;">Import from Resume<div class="rule"></div></h2>
     <div class="card" style="margin-bottom:20px;">
-      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload a PDF or DOCX resume. This pulls the text into your Documents tab (line breaks preserved) and auto-fills email/phone if found — it's a starting point, not a finished profile. Review and edit everything after. The original file (up to ~700KB) is also saved here so you can re-download it later.</p>
+      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload your resume as a <strong>Word document (.docx)</strong> — not a PDF. Word documents extract far more reliably (real paragraphs and words, not just positioned pixels), so this pulls clean text into your Documents tab and auto-fills email/phone if found. It's a starting point, not a finished profile — review and edit after. Your file is also converted to a PDF and saved here (up to ~700KB) so you can re-download a polished copy later. If your resume is currently a PDF, open it in Word (or Google Docs → File → Download → Word) and export it as .docx first.</p>
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-        <input type="file" id="resume-upload" accept=".pdf,.docx" style="flex:1; min-width:200px;" />
+        <input type="file" id="resume-upload" accept=".docx" style="flex:1; min-width:200px;" />
         <button class="btn-primary" onclick="handleResumeUpload()" id="resume-extract-btn">Extract</button>
       </div>
       <div style="font-size:12.5px; color:var(--accent); margin-top:8px;" id="resume-upload-status"></div>
@@ -425,9 +438,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
-<!-- Resume text extraction -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- Resume text extraction & PDF generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <script>
 // ============================================================
@@ -757,7 +770,10 @@ const DAILY_TASKS = [
 let applications = [];
 let topics = [];
 let syncStatus = { resume: null, portfolio: null, linkedin: null };
-let unsyncedCompletions = [];
+let pendingSync = [];
+let certificates = [];
+let dailyReflections = {};
+let reflectionChatHistory = [];
 let documents = { clean: '', raw: '' };
 let currentDoc = 'clean';
 let checklistState = { date: null, checks: {} };
@@ -768,7 +784,7 @@ let resumeFile = null;
 
 const CLEAN_RESUME_TEXT = `Your clean, ATS-ready resume goes here.
 
-Use "Import from Resume" in the Profile tab to pull in text from a PDF/DOCX, or just paste/type it directly into this box and click Save.`;
+Use "Import from Resume" in the Profile tab to pull in text from a Word (.docx) file, or just paste/type it directly into this box and click Save.`;
 
 const RAW_DUMP_TEXT = `This is your space for the full, unfiltered version of everything about your background — every project, every certification, every detail, even things too minor for the actual resume.
 
@@ -782,7 +798,9 @@ async function init() {
   const learningData = await loadData('learning', { topics: DEFAULT_TOPICS.map(t => ({ ...t, status: 'not-started', custom: false })) });
   topics = learningData.topics || DEFAULT_TOPICS.map(t => ({ ...t, status: 'not-started', custom: false }));
   syncStatus = await loadData('syncStatus', { resume: null, portfolio: null, linkedin: null });
-  unsyncedCompletions = await loadData('unsyncedCompletions', []);
+  pendingSync = await loadData('pendingSync', []);
+  certificates = await loadData('certificates', []);
+  dailyReflections = await loadData('dailyReflections', {});
   documents = await loadData('documents', { clean: CLEAN_RESUME_TEXT, raw: RAW_DUMP_TEXT, cleanSaved: null, rawSaved: null });
   if (!documents.clean) documents.clean = CLEAN_RESUME_TEXT;
   if (!documents.raw) documents.raw = RAW_DUMP_TEXT;
@@ -810,6 +828,7 @@ async function init() {
   renderDashboard();
   renderApplications();
   renderTopics();
+  renderCertificates();
   renderRoadmap();
   renderDoc();
   renderChecklist();
@@ -850,28 +869,44 @@ function renderDashboard() {
   const pct = Math.min(todayCount / 20, 1);
   document.getElementById('ring-progress').style.strokeDashoffset = circumference - pct * circumference;
 
-  const banner = document.getElementById('reminder-banner');
-  if (unsyncedCompletions.length > 0) {
-    banner.innerHTML = `<div class="banner">
-      <div class="msg"><strong>${unsyncedCompletions.length} completed topic${unsyncedCompletions.length > 1 ? 's' : ''}</strong> not yet reflected in your materials: ${unsyncedCompletions.map(c => c.name).join(', ')}.</div>
-      <button class="btn-primary btn-sm" onclick="document.querySelector('[data-tab=documents]').click()">Go update</button>
-    </div>`;
-  } else {
-    banner.innerHTML = '';
-  }
-
-  renderSyncStatus();
+  renderSyncCard();
   renderChecklist();
 }
 
-function renderSyncStatus() {
-  const card = document.getElementById('sync-status-card');
+function renderSyncCard() {
+  const card = document.getElementById('sync-card');
+  let html = '';
+
+  if (pendingSync.length > 0) {
+    html += pendingSync.map(item => `
+      <div class="sync-row" style="flex-direction:column; align-items:stretch;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+          <div class="sync-name">${escapeHtml(item.name)}</div>
+          <span class="sync-date">Completed ${item.date}</span>
+        </div>
+        <div style="display:flex; gap:16px; flex-wrap:wrap;">
+          <label style="display:flex; align-items:center; gap:6px; text-transform:none; font-family:'IBM Plex Sans',sans-serif; font-size:13px; color:var(--text); cursor:pointer;">
+            <input type="checkbox" ${item.resume ? 'checked' : ''} onchange="togglePendingSync('${item.id}','resume', this.checked)" style="width:16px; height:16px; accent-color:var(--accent);" /> Resume updated
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; text-transform:none; font-family:'IBM Plex Sans',sans-serif; font-size:13px; color:var(--text); cursor:pointer;">
+            <input type="checkbox" ${item.portfolio ? 'checked' : ''} onchange="togglePendingSync('${item.id}','portfolio', this.checked)" style="width:16px; height:16px; accent-color:var(--accent);" /> Portfolio updated
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; text-transform:none; font-family:'IBM Plex Sans',sans-serif; font-size:13px; color:var(--text); cursor:pointer;">
+            <input type="checkbox" ${item.linkedin ? 'checked' : ''} onchange="togglePendingSync('${item.id}','linkedin', this.checked)" style="width:16px; height:16px; accent-color:var(--accent);" /> LinkedIn updated
+          </label>
+        </div>
+      </div>
+    `).join('');
+  } else {
+    html += `<div class="empty" style="padding:14px 0;">Nothing pending — add a certificate or complete a roadmap item to trigger a reminder here.</div>`;
+  }
+
   const items = [
     { key: 'resume', label: 'Resume' },
     { key: 'portfolio', label: 'Portfolio' },
     { key: 'linkedin', label: 'LinkedIn' },
   ];
-  card.innerHTML = items.map(item => {
+  html += items.map(item => {
     const d = syncStatus[item.key];
     const age = daysAgo(d);
     const dateLabel = d ? `Last updated ${d} (${age === 0 ? 'today' : age + 'd ago'})` : 'Never marked updated';
@@ -884,16 +919,150 @@ function renderSyncStatus() {
       </div>
     </div>`;
   }).join('');
+
+  card.innerHTML = html;
+}
+
+async function togglePendingSync(id, channel, checked) {
+  const item = pendingSync.find(p => p.id === id);
+  if (!item) return;
+  item[channel] = checked;
+  if (checked) syncStatus[channel] = todayISO();
+  await saveData('pendingSync', pendingSync);
+  await saveData('syncStatus', syncStatus);
+  if (item.resume && item.portfolio && item.linkedin) {
+    pendingSync = pendingSync.filter(p => p.id !== id);
+    await saveData('pendingSync', pendingSync);
+  }
+  renderDashboard();
 }
 
 async function markSynced(key) {
   syncStatus[key] = todayISO();
   await saveData('syncStatus', syncStatus);
-  if (unsyncedCompletions.length > 0) {
-    unsyncedCompletions = [];
-    await saveData('unsyncedCompletions', unsyncedCompletions);
-  }
   renderDashboard();
+}
+
+// ============================================================
+// END-OF-DAY REFLECTION (uses the Anthropic API directly — no server needed)
+// ============================================================
+function isChecklistComplete() {
+  const todayCount = applications.filter(a => a.date === todayISO()).length;
+  return DAILY_TASKS.every(task => task.auto ? todayCount >= 20 : !!checklistState.checks[task.id]);
+}
+
+function renderReflectionSection() {
+  const el = document.getElementById('reflection-section');
+  if (!el) return;
+  const today = todayISO();
+  const complete = isChecklistComplete();
+  const saved = dailyReflections[today];
+
+  if (!complete && !saved) { el.innerHTML = ''; return; }
+
+  let html = '';
+  if (saved) {
+    html += `<h2 class="section-title">Today's Reflection<div class="rule"></div></h2>
+    <div class="card" style="margin-bottom:16px;">
+      <div style="white-space:pre-wrap; line-height:1.6; font-size:13.5px;">${escapeHtml(saved)}</div>
+      <div style="margin-top:14px; display:flex; gap:8px;">
+        <input id="reflection-followup" placeholder="Ask a follow-up or add more about today..." onkeydown="if(event.key==='Enter') sendReflectionFollowup()" />
+        <button class="btn-secondary btn-sm" onclick="sendReflectionFollowup()">Send</button>
+      </div>
+      <div id="reflection-chat-log" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;"></div>
+    </div>`;
+  } else {
+    html += `<div class="card" style="margin-bottom:16px;">
+      <p style="color:var(--text-muted); font-size:13px; margin:0 0 10px;">You've checked off everything on today's list. Want a quick reflection on how today went and what to focus on tomorrow?</p>
+      <button class="btn-primary btn-sm" onclick="reflectOnToday()" id="reflect-btn">Reflect on today</button>
+      <span id="reflect-error" style="color:var(--danger); font-size:12.5px; margin-left:10px;"></span>
+    </div>`;
+  }
+  el.innerHTML = html;
+  renderReflectionChatLog();
+}
+
+async function reflectOnToday() {
+  const btn = document.getElementById('reflect-btn');
+  const errEl = document.getElementById('reflect-error');
+  if (btn) { btn.disabled = true; btn.textContent = 'Thinking...'; }
+  if (errEl) errEl.textContent = '';
+
+  const today = todayISO();
+  const todaysApps = applications.filter(a => a.date === today);
+  const checkedLabels = DAILY_TASKS.filter(t => t.auto ? todaysApps.length >= 20 : checklistState.checks[t.id]).map(t => t.label);
+  const uncheckedLabels = DAILY_TASKS.filter(t => !(t.auto ? todaysApps.length >= 20 : checklistState.checks[t.id])).map(t => t.label);
+
+  const summary = `Today's job search checklist:
+Completed: ${checkedLabels.join('; ') || 'none'}
+Not completed: ${uncheckedLabels.join('; ') || 'none'}
+Applications logged today: ${todaysApps.length} (${todaysApps.map(a => a.company).join(', ') || 'none'})
+Total applications logged so far: ${applications.length}`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 400,
+        messages: [{
+          role: 'user',
+          content: `You're a warm, encouraging job-search coach reviewing someone's day. Based on this summary, write a short (4-6 sentence) conversational reflection: acknowledge what they got done, gently note anything they didn't get to without guilt-tripping them, and end with one concrete, specific suggestion for tomorrow. Write directly to them in second person. Plain text only, no headers or bullet points.\n\n${summary}`,
+        }],
+      }),
+    });
+    const data = await response.json();
+    const reflection = (data.content || []).map(b => b.text || '').join('\n').trim() || 'Could not generate a reflection right now.';
+    dailyReflections[today] = reflection;
+    reflectionChatHistory = [];
+    await saveData('dailyReflections', dailyReflections);
+    renderReflectionSection();
+  } catch (e) {
+    console.error('Reflection failed', e);
+    if (errEl) errEl.textContent = 'Could not generate a reflection right now: ' + e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Reflect on today'; }
+  }
+}
+
+async function sendReflectionFollowup() {
+  const input = document.getElementById('reflection-followup');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  reflectionChatHistory.push({ role: 'user', content: msg });
+  renderReflectionChatLog();
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 300,
+        messages: [
+          { role: 'user', content: `You're a warm, encouraging job-search coach chatting with someone about their day. Keep replies short (2-4 sentences), conversational, second person, plain text.` },
+          { role: 'assistant', content: "Got it — I'll keep it short, warm, and conversational." },
+          ...reflectionChatHistory,
+        ],
+      }),
+    });
+    const data = await response.json();
+    const reply = (data.content || []).map(b => b.text || '').join('\n').trim() || "Sorry, I didn't catch that — try again?";
+    reflectionChatHistory.push({ role: 'assistant', content: reply });
+    renderReflectionChatLog();
+  } catch (e) {
+    console.error('Follow-up failed', e);
+  }
+}
+
+function renderReflectionChatLog() {
+  const log = document.getElementById('reflection-chat-log');
+  if (!log) return;
+  log.innerHTML = reflectionChatHistory.map(m => `
+    <div style="align-self:${m.role === 'user' ? 'flex-end' : 'flex-start'}; max-width:80%; background:${m.role === 'user' ? 'var(--accent-dim)' : 'var(--surface2)'}; color:${m.role === 'user' ? '#E7ECF2' : 'var(--text)'}; border-radius:8px; padding:8px 12px; font-size:13px; line-height:1.5;">${escapeHtml(m.content)}</div>
+  `).join('');
 }
 
 // ============================================================
@@ -1011,8 +1180,8 @@ async function setTopicStatus(id, status) {
   await saveData('learning', { topics });
 
   if (status === 'completed' && !wasCompleted) {
-    unsyncedCompletions.push({ name: t.name, date: todayISO() });
-    await saveData('unsyncedCompletions', unsyncedCompletions);
+    pendingSync.push({ id: 'sync' + Date.now(), name: t.name, date: todayISO(), resume: false, portfolio: false, linkedin: false });
+    await saveData('pendingSync', pendingSync);
   }
   renderDashboard();
 }
@@ -1033,49 +1202,39 @@ async function addTopic() {
 }
 
 // ============================================================
-// RESUME IMPORT (client-side text extraction, no backend/AI)
+// RESUME IMPORT (Word documents only — see note in the Profile tab
+// about why PDFs were dropped: they extract far less reliably)
 // ============================================================
-async function extractPdfText(arrayBuffer) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  let text = '';
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-
-    // Group text fragments into lines based on their vertical position instead
-    // of joining everything with spaces. The tolerance scales with each
-    // fragment's font size (item.height) instead of a fixed pixel value —
-    // a fixed tolerance was too strict and split normal same-line text
-    // (varying letter baselines, kerning, etc.) into separate lines.
-    let lastY = null;
-    let lastHeight = 10;
-    let line = '';
-    content.items.forEach(item => {
-      const y = item.transform[5];
-      const height = item.height || Math.abs(item.transform[3]) || lastHeight;
-      const tolerance = Math.max(3, height * 0.6);
-      if (lastY !== null && Math.abs(y - lastY) > tolerance) {
-        text += line.trim() + '\n';
-        line = '';
-      }
-      line += item.str + ' ';
-      lastY = y;
-      lastHeight = height;
-    });
-    if (line.trim()) text += line.trim() + '\n';
-    text += '\n';
-  }
-  return text
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
 async function extractDocxText(arrayBuffer) {
   const result = await mammoth.extractRawText({ arrayBuffer });
   return result.value;
+}
+
+async function convertDocxToPdfBlob(arrayBuffer) {
+  const result = await mammoth.convertToHtml({ arrayBuffer });
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed; left:-9999px; top:0; width:700px; padding:36px; background:#fff; color:#111; font-family:Calibri,Arial,sans-serif; font-size:11pt; line-height:1.4;';
+  container.innerHTML = result.value;
+  document.body.appendChild(container);
+  try {
+    return await html2pdf().from(container).set({
+      margin: 10,
+      filename: 'resume.pdf',
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: 'pt', format: 'letter' },
+    }).outputPdf('blob');
+  } finally {
+    document.body.removeChild(container);
+  }
+}
+
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
 function renderResumeFile() {
@@ -1103,17 +1262,8 @@ async function removeResumeFile() {
   renderResumeFile();
 }
 
-function fileToDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 // Firestore documents cap out at 1MB total. Base64-encoding a file adds
-// ~37% overhead, so we cap the original file well under that to leave
+// ~37% overhead, so we cap the saved copy well under that to leave
 // headroom for the name/mimeType/date fields alongside it.
 const MAX_RESUME_FILE_BYTES = 700 * 1024;
 
@@ -1122,11 +1272,11 @@ async function handleResumeUpload() {
   const statusEl = document.getElementById('resume-upload-status');
   const btn = document.getElementById('resume-extract-btn');
   const file = fileInput.files[0];
-  if (!file) { statusEl.textContent = 'Choose a PDF or DOCX file first.'; return; }
+  if (!file) { statusEl.textContent = 'Choose a .docx file first.'; return; }
 
   const lower = file.name.toLowerCase();
-  if (!lower.endsWith('.pdf') && !lower.endsWith('.docx')) {
-    statusEl.textContent = 'Please upload a .pdf or .docx file.';
+  if (!lower.endsWith('.docx')) {
+    statusEl.textContent = 'Please upload a Word document (.docx) — see the note above for why PDFs aren\u2019t accepted here.';
     return;
   }
 
@@ -1135,12 +1285,7 @@ async function handleResumeUpload() {
 
   try {
     const buf = await file.arrayBuffer();
-    let text = '';
-    if (lower.endsWith('.pdf')) {
-      text = await extractPdfText(buf);
-    } else {
-      text = await extractDocxText(buf);
-    }
+    const text = await extractDocxText(buf);
 
     documents.raw = text;
     documents.rawSaved = todayISO();
@@ -1153,28 +1298,30 @@ async function handleResumeUpload() {
     if (phoneMatch && !profile.phone) { profile.phone = phoneMatch[0].trim(); filled.push('phone'); }
     if (filled.length) await saveData('profile', profile);
 
-    // Save the actual file (not just its extracted text) so it can be
-    // re-downloaded later, using Firestore itself (no billing plan required)
-    // instead of Firebase Storage.
     const extractedMsg = `Text extracted into Documents > Raw Data Dump${filled.length ? ` (auto-filled: ${filled.join(', ')})` : ''}.`;
     let fileSaved = false;
 
-    if (file.size > MAX_RESUME_FILE_BYTES) {
-      statusEl.textContent = `${extractedMsg} Note: this file is ${Math.round(file.size / 1024)}KB, which is over the ${Math.round(MAX_RESUME_FILE_BYTES / 1024)}KB limit for saving a downloadable copy on the free plan. The text was still extracted above.`;
-    } else {
-      statusEl.textContent = 'Saving file...';
-      try {
-        const dataUrl = await fileToDataURL(file);
-        const fileRecord = { name: file.name, mimeType: file.type, dataUrl, uploadedAt: todayISO() };
+    statusEl.textContent = 'Converting to PDF...';
+    try {
+      const pdfBlob = await convertDocxToPdfBlob(buf);
+      if (pdfBlob.size > MAX_RESUME_FILE_BYTES) {
+        statusEl.textContent = `${extractedMsg} Note: the generated PDF is ${Math.round(pdfBlob.size / 1024)}KB, over the ${Math.round(MAX_RESUME_FILE_BYTES / 1024)}KB free-plan limit, so it wasn't saved for download — the text extraction above still worked fine.`;
+      } else {
+        const dataUrl = await blobToDataURL(pdfBlob);
+        const pdfName = file.name.replace(/\.docx$/i, '.pdf');
+        const fileRecord = { name: pdfName, mimeType: 'application/pdf', dataUrl, uploadedAt: todayISO() };
         await db.collection('users').doc(uid).collection('appData').doc('resumeFile').set(fileRecord);
         resumeFile = fileRecord;
         fileSaved = true;
-      } catch (saveErr) {
-        console.error('File save failed (extracted text was still saved):', saveErr);
       }
-      statusEl.textContent = fileSaved
-        ? `${extractedMsg} File saved below for later download.`
-        : `${extractedMsg} Note: couldn't save the file itself for later download.`;
+    } catch (pdfErr) {
+      console.error('DOCX-to-PDF conversion failed (extracted text was still saved):', pdfErr);
+    }
+
+    if (fileSaved) {
+      statusEl.textContent = `${extractedMsg} Saved as a PDF below for later download.`;
+    } else if (!statusEl.textContent.includes('Note:')) {
+      statusEl.textContent = `${extractedMsg} Note: couldn't generate/save a PDF copy this time.`;
     }
 
     renderProfile();
@@ -1225,6 +1372,7 @@ function renderChecklist() {
       <label for="chk-${task.id}">${escapeHtml(task.label)}${task.auto ? ' (auto-tracked from Applications)' : ''}</label>
     </div>`;
   }).join('');
+  renderReflectionSection();
 }
 
 async function toggleCheck(id, checked) {
@@ -1265,10 +1413,57 @@ async function setCertStatus(id, status) {
 
   if (status === 'completed' && !wasCompleted) {
     const cert = CERT_ROADMAP.find(c => c.id === id);
-    unsyncedCompletions.push({ name: cert.title, date: todayISO() });
-    await saveData('unsyncedCompletions', unsyncedCompletions);
+    pendingSync.push({ id: 'sync' + Date.now(), name: cert.title, date: todayISO(), resume: false, portfolio: false, linkedin: false });
+    await saveData('pendingSync', pendingSync);
   }
   renderDashboard();
+}
+
+// ============================================================
+// CERTIFICATES (user-logged, separate from the fixed roadmap above)
+// ============================================================
+function renderCertificates() {
+  const list = document.getElementById('certificates-list');
+  if (!list) return;
+  if (!certificates.length) { list.innerHTML = ''; return; }
+  const sorted = [...certificates].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  list.innerHTML = sorted.map(c => `
+    <div class="topic-card">
+      <div class="topic-head">
+        <div>
+          <div class="topic-name">${escapeHtml(c.name)}</div>
+          <div class="topic-cat">${[c.issuer, c.date].filter(Boolean).map(escapeHtml).join(' · ')}</div>
+        </div>
+        <button class="btn-danger" onclick="deleteCertificate('${c.id}')">Delete</button>
+      </div>
+      ${c.url ? `<div class="topic-sources"><a href="${escapeHtml(c.url)}" target="_blank">View credential ↗</a></div>` : ''}
+    </div>
+  `).join('');
+}
+
+async function addCertificate() {
+  const name = document.getElementById('cert-name').value.trim();
+  const issuer = document.getElementById('cert-issuer').value.trim();
+  const date = document.getElementById('cert-date').value || todayISO();
+  const url = document.getElementById('cert-url').value.trim();
+  if (!name) { alert('Certificate name is required.'); return; }
+
+  certificates.push({ id: 'cert' + Date.now(), name, issuer, date, url });
+  await saveData('certificates', certificates);
+
+  pendingSync.push({ id: 'sync' + Date.now(), name, date, resume: false, portfolio: false, linkedin: false });
+  await saveData('pendingSync', pendingSync);
+
+  ['cert-name', 'cert-issuer', 'cert-url'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('cert-date').value = '';
+  renderCertificates();
+  renderDashboard();
+}
+
+async function deleteCertificate(id) {
+  certificates = certificates.filter(c => c.id !== id);
+  await saveData('certificates', certificates);
+  renderCertificates();
 }
 
 // ============================================================
