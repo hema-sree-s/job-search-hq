@@ -153,6 +153,14 @@
   .auth-card h1 { font-family: 'Space Grotesk', sans-serif; font-size: 20px; margin: 0 0 6px; }
   .auth-card p { color: var(--text-muted); font-size: 13px; margin: 0 0 20px; }
   .auth-field { margin-bottom: 12px; }
+  .password-wrap { position: relative; }
+  .password-wrap input { padding-right: 56px; }
+  .password-toggle {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    background: transparent; border: none; color: var(--text-muted); font-size: 11px;
+    padding: 5px 8px; cursor: pointer; font-family: 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  .password-toggle:hover { color: var(--accent); }
   .auth-toggle { text-align: center; margin-top: 14px; font-size: 12.5px; color: var(--text-muted); }
   .auth-toggle a { color: var(--accent); cursor: pointer; text-decoration: none; }
   .auth-error { color: var(--danger); font-size: 12.5px; margin-top: 8px; min-height: 16px; }
@@ -171,9 +179,19 @@
     <h1>Job Search HQ</h1>
     <p id="auth-subtitle">Sign in to sync your data across every device.</p>
     <div class="auth-success" id="auth-success" style="display:none;"></div>
-    <div class="auth-field"><input id="auth-email" type="email" placeholder="Email" /></div>
-    <div class="auth-field"><input id="auth-password" type="password" placeholder="Password" /></div>
-    <div class="auth-field" id="auth-password-confirm-wrap" style="display:none;"><input id="auth-password-confirm" type="password" placeholder="Confirm password" /></div>
+    <div class="auth-field"><input id="auth-email" type="email" placeholder="Email" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" /></div>
+    <div class="auth-field">
+      <div class="password-wrap">
+        <input id="auth-password" type="password" placeholder="Password" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" />
+        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('auth-password', this)">Show</button>
+      </div>
+    </div>
+    <div class="auth-field" id="auth-password-confirm-wrap" style="display:none;">
+      <div class="password-wrap">
+        <input id="auth-password-confirm" type="password" placeholder="Confirm password" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" />
+        <button type="button" class="password-toggle" onclick="togglePasswordVisibility('auth-password-confirm', this)">Show</button>
+      </div>
+    </div>
     <button class="btn-primary" style="width:100%;" onclick="authSubmit()" id="auth-submit-btn">Sign In</button>
     <div style="text-align:right; margin-top:8px;">
       <a onclick="forgotPassword()" id="forgot-password-link" style="color:var(--text-muted); font-size:12px; cursor:pointer; text-decoration:none;">Forgot password?</a>
@@ -196,7 +214,12 @@
     <div class="auth-field"><input id="delete-confirm-input" placeholder="Type DELETE" /></div>
     <div id="reauth-section" style="display:none;">
       <p style="font-size:12.5px; color:var(--text-muted); margin:0 0 8px;">For your security, re-enter your password to continue.</p>
-      <div class="auth-field"><input id="reauth-password" type="password" placeholder="Current password" /></div>
+      <div class="auth-field">
+        <div class="password-wrap">
+          <input id="reauth-password" type="password" placeholder="Current password" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" />
+          <button type="button" class="password-toggle" onclick="togglePasswordVisibility('reauth-password', this)">Show</button>
+        </div>
+      </div>
     </div>
     <div class="auth-error" id="delete-account-error"></div>
     <div style="display:flex; gap:10px; margin-top:6px;">
@@ -222,6 +245,7 @@
     <button class="tab" data-tab="applications">Applications</button>
     <button class="tab" data-tab="targets">Target Companies</button>
     <button class="tab" data-tab="learning">Learning</button>
+    <button class="tab" data-tab="certificates">Certificates</button>
     <button class="tab" data-tab="documents">Documents</button>
     <button class="tab" data-tab="profile">Profile</button>
   </div>
@@ -325,21 +349,6 @@
     <p style="color:var(--text-muted); font-size:13px; margin-top:-8px;">Sequenced to build on what you already have — each one leverages the last. Ask Claude weekly if you want this reordered based on how interviews are going.</p>
     <div class="card" id="roadmap-card" style="margin-bottom:24px;"></div>
 
-    <h2 class="section-title">Certificates<div class="rule"></div></h2>
-    <div class="card" style="margin-bottom:24px;">
-      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Log any certificate you've completed — from the roadmap above or anywhere else. Adding one here automatically reminds you to update your resume, portfolio, and LinkedIn on the Dashboard.</p>
-      <div class="form-row">
-        <div><label>Certificate name</label><input id="cert-name" placeholder="e.g. AWS Cloud Practitioner" /></div>
-        <div><label>Issuer (optional)</label><input id="cert-issuer" placeholder="e.g. Amazon Web Services" /></div>
-        <div><label>Date earned</label><input id="cert-date" type="date" /></div>
-      </div>
-      <div class="form-row">
-        <div><label>Credential URL (optional)</label><input id="cert-url" placeholder="https://..." /></div>
-      </div>
-      <button class="btn-primary" onclick="addCertificate()">Add certificate</button>
-      <div id="certificates-list" style="margin-top:14px;"></div>
-    </div>
-
     <div class="card" style="margin-bottom:18px;">
       <h2 class="section-title" style="margin-top:0;">Add a custom topic<div class="rule"></div></h2>
       <div class="form-row">
@@ -352,6 +361,24 @@
     <div id="topics-list"></div>
   </div>
 
+  <!-- CERTIFICATES -->
+  <div class="panel" id="panel-certificates">
+    <h2 class="section-title" style="margin-top:0;">Certificates<div class="rule"></div></h2>
+    <div class="card" style="margin-bottom:24px;">
+      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Log any certificate you've completed — from the Learning roadmap or anywhere else. Adding one here automatically reminds you (on the Dashboard) to update your resume, portfolio, and LinkedIn.</p>
+      <div class="form-row">
+        <div><label>Certificate name</label><input id="cert-name" placeholder="e.g. AWS Cloud Practitioner" /></div>
+        <div><label>Issuer (optional)</label><input id="cert-issuer" placeholder="e.g. Amazon Web Services" /></div>
+        <div><label>Date earned</label><input id="cert-date" type="date" /></div>
+      </div>
+      <div class="form-row">
+        <div><label>Credential URL (optional)</label><input id="cert-url" placeholder="https://..." /></div>
+      </div>
+      <button class="btn-primary" onclick="addCertificate()">Add certificate</button>
+    </div>
+    <div id="certificates-list"></div>
+  </div>
+
   <!-- DOCUMENTS -->
   <div class="panel" id="panel-documents">
     <div class="doc-tabs">
@@ -360,9 +387,10 @@
     </div>
     <div class="card">
       <textarea class="doc-view" id="doc-textarea"></textarea>
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; flex-wrap:wrap; gap:10px;">
         <span class="sync-date" id="doc-last-saved"></span>
-        <div style="display:flex; gap:8px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn-secondary btn-sm" id="copy-to-clean-btn" style="display:none;" onclick="copyRawToClean()">Copy into Clean ATS Resume</button>
           <button class="btn-secondary btn-sm" onclick="downloadDoc('txt')">Download .txt</button>
           <button class="btn-secondary btn-sm" onclick="downloadDoc('doc')">Download Word (.doc)</button>
           <button class="btn-primary btn-sm" onclick="saveDoc()">Save changes</button>
@@ -375,7 +403,7 @@
   <div class="panel" id="panel-profile">
     <h2 class="section-title" style="margin-top:0;">Import from Resume<div class="rule"></div></h2>
     <div class="card" style="margin-bottom:20px;">
-      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload your resume as a <strong>Word document (.docx)</strong> — not a PDF. Word documents extract far more reliably (real paragraphs and words, not just positioned pixels), so this pulls clean text into your Documents tab and auto-fills email/phone if found. It's a starting point, not a finished profile — review and edit after. Your file is also converted to a PDF and saved here (up to ~700KB) so you can re-download a polished copy later. If your resume is currently a PDF, open it in Word (or Google Docs → File → Download → Word) and export it as .docx first.</p>
+      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload your resume as a <strong>Word document (.docx)</strong> — not a PDF. Word documents extract far more reliably (real paragraphs and words, not just positioned pixels), so this pulls clean text into your Documents tab and auto-fills email/phone if found. It's a starting point, not a finished profile — review and edit after. Your file is also converted to a PDF and saved here (up to ~700KB) so you can view or re-download a polished copy later. If your resume is currently a PDF, open it in Word (or Google Docs → File → Download → Word) and export it as .docx first.</p>
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
         <input type="file" id="resume-upload" accept=".docx" style="flex:1; min-width:200px;" />
         <button class="btn-primary" onclick="handleResumeUpload()" id="resume-extract-btn">Extract</button>
@@ -461,6 +489,45 @@ let uid = null;
 let cachedDoc = {};
 let isSignUpMode = false;
 
+// Firebase's raw error messages (e.g. "Firebase: Error (auth/user-not-found).")
+// aren't something to show someone using the app — map the common ones to
+// plain, actionable sentences instead.
+function friendlyAuthError(e) {
+  const code = e && e.code;
+  const map = {
+    'auth/invalid-credential': 'Incorrect email or password. If you don\u2019t have an account yet, use "Create an account" below.',
+    'auth/user-not-found': 'No account found with that email. Try "Create an account" below instead.',
+    'auth/wrong-password': 'Incorrect password. Try again, or use "Forgot password?" below.',
+    'auth/email-already-in-use': 'An account with that email already exists \u2014 try signing in instead.',
+    'auth/weak-password': 'Password is too weak \u2014 use at least 6 characters.',
+    'auth/invalid-email': 'That doesn\u2019t look like a valid email address.',
+    'auth/too-many-requests': 'Too many attempts \u2014 please wait a bit and try again.',
+    'auth/popup-closed-by-user': 'Google sign-in was closed before finishing.',
+    'auth/network-request-failed': 'Network error \u2014 check your connection and try again.',
+    'auth/requires-recent-login': 'For security, please sign in again to continue.',
+  };
+  if (code && map[code]) return map[code];
+  if (e && e.message) return e.message.replace(/^Firebase:\s*/i, '').replace(/\s*\(auth\/[\w-]+\)\.?$/i, '').trim();
+  return 'Something went wrong. Please try again.';
+}
+
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const showing = input.type === 'text';
+  input.type = showing ? 'password' : 'text';
+  btn.textContent = showing ? 'Show' : 'Hide';
+}
+
+function clearAuthForm() {
+  ['auth-email', 'auth-password', 'auth-password-confirm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('auth-error').textContent = '';
+  document.getElementById('auth-success').style.display = 'none';
+}
+
 function setAuthMode(signUp) {
   isSignUpMode = signUp;
   document.getElementById('auth-submit-btn').textContent = isSignUpMode ? 'Create Account' : 'Sign In';
@@ -476,8 +543,7 @@ function setAuthMode(signUp) {
 
 function toggleAuthMode() {
   setAuthMode(!isSignUpMode);
-  document.getElementById('auth-error').textContent = '';
-  document.getElementById('auth-success').style.display = 'none';
+  clearAuthForm();
 }
 
 async function authSubmit() {
@@ -516,7 +582,7 @@ async function authSubmit() {
       await auth.signInWithEmailAndPassword(email, password);
     }
   } catch (e) {
-    errEl.textContent = e.message;
+    errEl.textContent = friendlyAuthError(e);
   } finally {
     btn.disabled = false;
     btn.textContent = isSignUpMode ? 'Create Account' : 'Sign In';
@@ -535,7 +601,7 @@ async function forgotPassword() {
     successEl.textContent = `Password reset email sent to ${email}. Check your inbox.`;
     successEl.style.display = 'block';
   } catch (e) {
-    errEl.textContent = e.message;
+    errEl.textContent = friendlyAuthError(e);
   }
 }
 
@@ -556,7 +622,7 @@ async function signInWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
     await auth.signInWithPopup(provider);
   } catch (e) {
-    errEl.textContent = e.message;
+    errEl.textContent = friendlyAuthError(e);
   } finally {
     btn.disabled = false;
     btn.textContent = original;
@@ -575,6 +641,11 @@ auth.onAuthStateChanged(async (user) => {
     uid = null;
     document.getElementById('auth-overlay').style.display = 'flex';
     document.getElementById('app-root').style.display = 'none';
+    clearAuthForm();
+    // Chrome sometimes autofills saved credentials a beat after the page
+    // renders, overriding the clear above. A short delayed second pass
+    // catches that race without needing the user to notice or act.
+    setTimeout(clearAuthForm, 300);
   }
 });
 
@@ -593,7 +664,13 @@ async function saveData(key, value) {
   }
 }
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 const daysAgo = (isoDate) => {
   if (!isoDate) return Infinity;
   const diff = (new Date(todayISO()) - new Date(isoDate)) / 86400000;
@@ -661,10 +738,10 @@ async function confirmDeleteAccount() {
         await user.delete();
         closeDeleteAccount();
       } catch (e2) {
-        errEl.textContent = e2.message;
+        errEl.textContent = friendlyAuthError(e2);
       }
     } else {
-      errEl.textContent = e.message;
+      errEl.textContent = friendlyAuthError(e);
     }
   } finally {
     btn.disabled = false;
@@ -1245,6 +1322,7 @@ function renderResumeFile() {
     <div class="sync-name">${escapeHtml(resumeFile.name)}</div>
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
       <span class="sync-date">Uploaded ${resumeFile.uploadedAt}</span>
+      <a href="${resumeFile.dataUrl}" target="_blank" rel="noopener" class="btn-secondary btn-sm" style="text-decoration:none; display:inline-block;">View</a>
       <a href="${resumeFile.dataUrl}" download="${escapeHtml(resumeFile.name)}" class="btn-secondary btn-sm" style="text-decoration:none; display:inline-block;">Download</a>
       <button class="btn-danger" onclick="removeResumeFile()">Remove</button>
     </div>
@@ -1289,6 +1367,12 @@ async function handleResumeUpload() {
 
     documents.raw = text;
     documents.rawSaved = todayISO();
+    let alsoFilledClean = false;
+    if (!documents.clean || documents.clean === CLEAN_RESUME_TEXT) {
+      documents.clean = text;
+      documents.cleanSaved = todayISO();
+      alsoFilledClean = true;
+    }
     await saveData('documents', documents);
 
     const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
@@ -1298,7 +1382,7 @@ async function handleResumeUpload() {
     if (phoneMatch && !profile.phone) { profile.phone = phoneMatch[0].trim(); filled.push('phone'); }
     if (filled.length) await saveData('profile', profile);
 
-    const extractedMsg = `Text extracted into Documents > Raw Data Dump${filled.length ? ` (auto-filled: ${filled.join(', ')})` : ''}.`;
+    const extractedMsg = `Text extracted into Documents > Raw Data Dump${alsoFilledClean ? ' and Clean ATS Resume (it was still empty)' : ''}${filled.length ? ` (auto-filled: ${filled.join(', ')})` : ''}.`;
     let fileSaved = false;
 
     statusEl.textContent = 'Converting to PDF...';
@@ -1501,6 +1585,20 @@ function renderDoc() {
   const savedKey = currentDoc + 'Saved';
   const saved = documents[savedKey];
   document.getElementById('doc-last-saved').textContent = saved ? `Last saved ${saved}` : 'Not yet edited';
+  const copyBtn = document.getElementById('copy-to-clean-btn');
+  if (copyBtn) copyBtn.style.display = currentDoc === 'raw' ? 'inline-block' : 'none';
+}
+
+async function copyRawToClean() {
+  const rawText = document.getElementById('doc-textarea').value;
+  if (!rawText.trim()) { alert('Raw Data Dump is empty — nothing to copy.'); return; }
+  if (documents.clean && documents.clean !== CLEAN_RESUME_TEXT) {
+    if (!confirm('This will overwrite what\'s currently in Clean ATS Resume with the Raw Data Dump text. Continue?')) return;
+  }
+  documents.clean = rawText;
+  documents.cleanSaved = todayISO();
+  await saveData('documents', documents);
+  switchDoc('clean');
 }
 
 async function saveDoc() {
