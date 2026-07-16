@@ -497,10 +497,11 @@
       <button class="doc-tab" data-doc="raw" onclick="switchDoc('raw')">Raw Data Dump</button>
     </div>
     <div class="card" id="doc-format-help" style="margin-bottom:14px; font-size:12.5px; color:var(--text-muted); line-height:1.6;">
-      Simple formatting, applied when you Preview or Download: a line starting with <code>#</code> becomes your name/title, <code>##</code> becomes a section header (EXPERIENCE, EDUCATION, SKILLS...), and <code>-</code> becomes a bullet point. Everything else is a normal paragraph. Example:<br>
+      Simple formatting, applied when you Preview or export PDF: a line starting with <code>#</code> becomes your name/title, <code>##</code> becomes a section header (EXPERIENCE, EDUCATION, SKILLS...), and <code>-</code> becomes a bullet point. Everything else is a normal paragraph. Example:<br>
       <code># Jane Doe — Software Engineer</code><br>
       <code>## Experience</code><br>
-      <code>- Built X, improving Y by Z%</code>
+      <code>- Built X, improving Y by Z%</code><br><br>
+      "Export as PDF" opens a formatted preview in a new tab and triggers your browser's print dialog automatically — choose <strong>Save as PDF</strong> as the destination. This uses your browser's own built-in PDF export rather than a third-party tool, which is far more reliable.
     </div>
     <div class="card">
       <textarea class="doc-view" id="doc-textarea" oninput="markDocDirty()"></textarea>
@@ -510,7 +511,7 @@
           <button class="btn-secondary btn-sm" id="copy-to-clean-btn" style="display:none;" onclick="copyRawToClean()">Copy into Clean ATS Resume</button>
           <button class="btn-secondary btn-sm" id="preview-doc-btn" onclick="previewFormattedDoc()">Preview formatted</button>
           <button class="btn-secondary btn-sm" onclick="downloadDoc('txt')">Download .txt</button>
-          <button class="btn-secondary btn-sm" id="download-pdf-btn" onclick="downloadFormattedPdf()">Download PDF</button>
+          <button class="btn-secondary btn-sm" id="download-pdf-btn" onclick="downloadFormattedPdf()">Export as PDF</button>
           <button class="btn-secondary btn-sm" onclick="downloadDoc('doc')">Download Word (.doc)</button>
           <button class="btn-primary btn-sm" onclick="saveDoc()">Save changes</button>
         </div>
@@ -522,7 +523,8 @@
   <div class="panel" id="panel-profile">
     <h2 class="section-title" style="margin-top:0;">Import from Resume<div class="rule"></div></h2>
     <div class="card" style="margin-bottom:20px;">
-      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload your resume as a <strong>Word document (.docx)</strong> — not a PDF. Word documents extract far more reliably (real paragraphs and words, not just positioned pixels), so this pulls clean text into your Documents tab and auto-fills email/phone if found. It's a starting point, not a finished profile — review and edit after. Your file is also converted to a PDF and saved here (up to ~700KB) so you can view or re-download a polished copy later. If your resume is currently a PDF, open it in Word (or Google Docs → File → Download → Word) and export it as .docx first.</p>
+      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Upload your resume as a <strong>Word document (.docx)</strong> — not a PDF. Word documents extract far more reliably (real paragraphs and words, not just positioned pixels), so this pulls clean text into your Documents tab and auto-fills email/phone if found. It's a starting point, not a finished profile — review and edit after. Your original file is also saved here (up to ~700KB) so you can re-download it later. If your resume is currently a PDF, open it in Word (or Google Docs → File → Download → Word) and export it as .docx first. Want an actual PDF? Build it in Resume Builder or Documents \u2192 Clean ATS Resume, then use "Export as PDF" there.</p>
+      <p style="color:var(--text-muted); font-size:12px; margin:8px 0 0;">Old file left over from a previous upload attempt and no longer opens correctly? Click <strong>Remove</strong> below and re-upload to replace it.</p>
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
         <input type="file" id="resume-upload" accept=".docx" style="flex:1; min-width:200px;" />
         <button class="btn-primary" onclick="handleResumeUpload()" id="resume-extract-btn">Extract</button>
@@ -585,9 +587,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
-<!-- Resume text extraction & PDF generation -->
+<!-- Resume text extraction -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <script>
 // ============================================================
@@ -1469,43 +1470,6 @@ async function extractDocxText(arrayBuffer) {
   return result.value;
 }
 
-async function convertDocxToPdfBlob(arrayBuffer) {
-  const result = await mammoth.convertToHtml({ arrayBuffer });
-  const container = document.createElement('div');
-  // IMPORTANT: html2canvas (used internally by html2pdf) frequently produces
-  // a blank capture when the source element is positioned far off-screen
-  // (e.g. left:-9999px) — a common way to "hide" content that actively
-  // breaks this specific rendering path. Keeping it inside the viewport at
-  // (0,0) but invisible via opacity avoids that failure mode.
-  container.style.cssText = 'position:fixed; top:0; left:0; width:700px; padding:36px; background:#fff; color:#111; font-family:Calibri,Arial,sans-serif; font-size:11pt; line-height:1.4; opacity:0; pointer-events:none; z-index:-1000;';
-  container.innerHTML = result.value;
-  document.body.appendChild(container);
-  try {
-    // Give the browser a couple of frames to actually paint the content
-    // before html2canvas captures it — capturing immediately after
-    // innerHTML assignment can race the layout/paint step.
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-    const blob = await html2pdf().from(container).set({
-      margin: 10,
-      filename: 'resume.pdf',
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: 'pt', format: 'letter' },
-    }).outputPdf('blob');
-
-    // A genuinely blank single-page PDF at this scale is reliably under
-    // ~2KB. If we land below that, something went wrong in rendering —
-    // surface it as a real failure instead of silently "succeeding" with
-    // an empty file.
-    if (!blob || blob.size < 2000) {
-      throw new Error('Generated PDF appears to be blank (rendering failed).');
-    }
-    return blob;
-  } finally {
-    document.body.removeChild(container);
-  }
-}
-
 function blobToDataURL(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1513,27 +1477,6 @@ function blobToDataURL(blob) {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
-}
-
-function dataURLtoBlob(dataUrl) {
-  const [header, base64] = dataUrl.split(',');
-  const mimeMatch = header.match(/data:(.*?);base64/);
-  const mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
-}
-
-function viewResumeFile() {
-  if (!resumeFile) return;
-  // Browsers frequently block or blank a direct navigation to a data: URL
-  // (a phishing-prevention measure). Converting to a blob: URL first — the
-  // same mechanism the Download buttons already use — opens reliably.
-  const blob = dataURLtoBlob(resumeFile.dataUrl);
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank', 'noopener');
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 function renderResumeFile() {
@@ -1544,8 +1487,7 @@ function renderResumeFile() {
     <div class="sync-name">${escapeHtml(resumeFile.name)}</div>
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
       <span class="sync-date">Uploaded ${resumeFile.uploadedAt}</span>
-      <button class="btn-secondary btn-sm" onclick="viewResumeFile()">View</button>
-      <a href="${resumeFile.dataUrl}" download="${escapeHtml(resumeFile.name)}" class="btn-secondary btn-sm" style="text-decoration:none; display:inline-block;">Download</a>
+      <a href="${resumeFile.dataUrl}" download="${escapeHtml(resumeFile.name)}" class="btn-secondary btn-sm" style="text-decoration:none; display:inline-block;">Download original file</a>
       <button class="btn-danger" onclick="removeResumeFile()">Remove</button>
     </div>
   </div>`;
@@ -1580,6 +1522,11 @@ async function handleResumeUpload() {
     return;
   }
 
+  if (file.size > MAX_RESUME_FILE_BYTES) {
+    statusEl.textContent = `That file is ${Math.round(file.size / 1024)}KB, over the ${Math.round(MAX_RESUME_FILE_BYTES / 1024)}KB limit for saving on the free plan. Text extraction won't work without saving the file first — try a smaller file.`;
+    return;
+  }
+
   const hasExistingRaw = documents.raw && documents.raw !== RAW_DUMP_TEXT;
   if ((hasExistingRaw || resumeFile) && !confirm('This will replace your current Raw Data Dump text' + (resumeFile ? ' and your currently saved resume file' : '') + ' with this new upload. Anything currently in Clean ATS Resume is untouched. Continue?')) {
     return;
@@ -1603,31 +1550,32 @@ async function handleResumeUpload() {
     if (phoneMatch && !profile.phone) { profile.phone = phoneMatch[0].trim(); filled.push('phone'); }
     if (filled.length) await saveData('profile', profile);
 
-    const extractedMsg = `Text extracted into Documents > Raw Data Dump${filled.length ? ` (auto-filled: ${filled.join(', ')})` : ''}. Use "Copy into Clean ATS Resume" there when you're ready to build your polished version.`;
+    // Save the original .docx itself (not a converted PDF) so you can
+    // re-download the exact file you uploaded. This reuses the same
+    // Firestore-as-storage approach the account-deletion and viewing code
+    // already relies on, which has held up fine — the PDF *conversion* step
+    // was the unreliable part, so it's gone now, not this part.
+    statusEl.textContent = 'Saving file...';
     let fileSaved = false;
-
-    statusEl.textContent = 'Converting to PDF...';
     try {
-      const pdfBlob = await convertDocxToPdfBlob(buf);
-      if (pdfBlob.size > MAX_RESUME_FILE_BYTES) {
-        statusEl.textContent = `${extractedMsg} Note: the generated PDF is ${Math.round(pdfBlob.size / 1024)}KB, over the ${Math.round(MAX_RESUME_FILE_BYTES / 1024)}KB free-plan limit, so it wasn't saved for download — the text extraction above still worked fine.`;
-      } else {
-        const dataUrl = await blobToDataURL(pdfBlob);
-        const pdfName = file.name.replace(/\.docx$/i, '.pdf');
-        const fileRecord = { name: pdfName, mimeType: 'application/pdf', dataUrl, uploadedAt: todayISO() };
-        await db.collection('users').doc(uid).collection('appData').doc('resumeFile').set(fileRecord);
-        resumeFile = fileRecord;
-        fileSaved = true;
-      }
-    } catch (pdfErr) {
-      console.error('DOCX-to-PDF conversion failed (extracted text was still saved):', pdfErr);
+      const dataUrl = await blobToDataURL(file);
+      const fileRecord = {
+        name: file.name,
+        mimeType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        dataUrl,
+        uploadedAt: todayISO(),
+      };
+      await db.collection('users').doc(uid).collection('appData').doc('resumeFile').set(fileRecord);
+      resumeFile = fileRecord;
+      fileSaved = true;
+    } catch (saveErr) {
+      console.error('Saving the original file failed (extracted text was still saved):', saveErr);
     }
 
-    if (fileSaved) {
-      statusEl.textContent = `${extractedMsg} Saved as a PDF below for later download.`;
-    } else if (!statusEl.textContent.includes('Note:')) {
-      statusEl.textContent = `${extractedMsg} Note: couldn't generate/save a PDF copy this time.`;
-    }
+    const extractedMsg = `Text extracted into Documents > Raw Data Dump${filled.length ? ` (auto-filled: ${filled.join(', ')})` : ''}. Use "Copy into Clean ATS Resume" there when you're ready to build your polished version.`;
+    statusEl.textContent = fileSaved
+      ? `${extractedMsg} Your original file is saved below for later download.`
+      : `${extractedMsg} Note: couldn't save the original file this time — the text above still worked fine.`;
 
     renderProfile();
     fileInput.value = '';
@@ -1937,19 +1885,19 @@ async function generateResumeFromBuilder() {
   }
 
   const lines = [];
-  lines.push((profile.name || '(Your Name)').toUpperCase());
+  lines.push('# ' + (profile.name || '(Your Name)'));
   const contactBits = [profile.location, profile.phone, profile.email, profile.portfolio, profile.github, profile.linkedin].filter(Boolean);
   if (contactBits.length) lines.push(contactBits.join(' | '));
   lines.push('');
 
   if (profile.pitch && profile.pitch.trim()) {
-    lines.push('SUMMARY');
+    lines.push('## Summary');
     lines.push(profile.pitch.trim());
     lines.push('');
   }
 
   if (experienceEntries.length) {
-    lines.push('EXPERIENCE');
+    lines.push('## Experience');
     experienceEntries.forEach(e => {
       const header = [e.title, e.company].filter(Boolean).join(' \u2014 ');
       const dateRange = [e.start, e.end].filter(Boolean).join(' \u2013 ');
@@ -1960,7 +1908,7 @@ async function generateResumeFromBuilder() {
   }
 
   if (educationEntries.length) {
-    lines.push('EDUCATION');
+    lines.push('## Education');
     educationEntries.forEach(e => {
       const dateRange = [e.start, e.end].filter(Boolean).join(' \u2013 ');
       lines.push([e.school, e.degree].filter(Boolean).join(' \u2014 ') + (dateRange ? '   ' + dateRange : ''));
@@ -1970,7 +1918,7 @@ async function generateResumeFromBuilder() {
   }
 
   if (projectEntries.length) {
-    lines.push('PROJECTS');
+    lines.push('## Projects');
     projectEntries.forEach(p => {
       lines.push([p.name, p.tech].filter(Boolean).join(' \u2014 ') + (p.url ? '   ' + p.url : ''));
       if (p.description) lines.push(p.description);
@@ -1979,13 +1927,13 @@ async function generateResumeFromBuilder() {
   }
 
   if (profile.skills && profile.skills.trim()) {
-    lines.push('SKILLS');
+    lines.push('## Skills');
     lines.push(profile.skills.trim());
     lines.push('');
   }
 
   if (profile.achievements && profile.achievements.trim()) {
-    lines.push('ACHIEVEMENTS');
+    lines.push('## Achievements');
     lines.push(profile.achievements.trim());
     lines.push('');
   }
@@ -2113,38 +2061,37 @@ function formatResumeToHTML(text) {
   return html;
 }
 
+function buildResumePreviewHTML(text, autoPrint) {
+  const printScript = autoPrint ? `<script>window.onload = function(){ setTimeout(function(){ window.print(); }, 250); };<\/script>` : '';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Resume</title>
+    <style>
+      @media print { @page { margin: 0.6in; } }
+      body{font-family:Calibri,Arial,sans-serif; font-size:11pt; color:#111; background:#fff; max-width:750px; margin:40px auto; padding:0 20px; line-height:1.45;}
+    </style>
+    </head><body>${formatResumeToHTML(text)}${printScript}</body></html>`;
+}
+
 function previewFormattedDoc() {
   const text = document.getElementById('doc-textarea').value;
   if (!text.trim()) { alert('Nothing to preview yet.'); return; }
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Resume Preview</title>
-    <style>body{font-family:Calibri,Arial,sans-serif; font-size:11pt; color:#111; background:#fff; max-width:750px; margin:40px auto; padding:0 20px; line-height:1.45;}</style>
-    </head><body>${formatResumeToHTML(text)}</body></html>`;
-  const blob = new Blob([html], { type: 'text/html' });
+  const blob = new Blob([buildResumePreviewHTML(text, false)], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank', 'noopener');
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-async function downloadFormattedPdf() {
+function downloadFormattedPdf() {
+  // Uses the browser's own native print-to-PDF instead of a third-party
+  // library. This opens a formatted preview and triggers the print dialog
+  // automatically — choose "Save as PDF" as the destination. Every browser
+  // has supported this reliably for years; nothing here can silently
+  // render blank the way the previous library-based approaches did.
   const text = document.getElementById('doc-textarea').value;
   if (!text.trim()) { alert('Nothing to export yet.'); return; }
-  const safeName = (profile.name || 'Resume').trim().replace(/[^a-z0-9]+/gi, '_') || 'Resume';
-  const container = document.createElement('div');
-  container.style.cssText = 'position:fixed; left:-9999px; top:0; width:700px; padding:36px; background:#fff; color:#111; font-family:Calibri,Arial,sans-serif; font-size:11pt; line-height:1.45;';
-  container.innerHTML = formatResumeToHTML(text);
-  document.body.appendChild(container);
-  try {
-    await html2pdf().from(container).set({
-      margin: 10,
-      filename: `${safeName}_Clean.pdf`,
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: 'pt', format: 'letter' },
-    }).save();
-  } catch (e) {
-    alert('Could not generate the PDF: ' + e.message);
-  } finally {
-    document.body.removeChild(container);
-  }
+  const blob = new Blob([buildResumePreviewHTML(text, true)], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 function downloadDoc(format) {
