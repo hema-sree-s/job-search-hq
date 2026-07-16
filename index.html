@@ -266,7 +266,16 @@
   <div class="panel active" id="panel-dashboard">
     <h2 class="section-title" style="margin-top:0;">Today's Checklist<div class="rule"></div></h2>
     <div class="card" id="checklist-card" style="margin-bottom:16px;"></div>
-    <div id="reflection-section"></div>
+    <h2 class="section-title">Today's Assistant<div class="rule"></div></h2>
+    <div class="card" style="margin-bottom:16px;">
+      <p style="color:var(--text-muted); font-size:12px; margin:0 0 12px;">A simple rule-based assistant \u2014 not a real AI. It answers instantly from your actual data, doesn't call any external service, and can't misunderstand or hallucinate, but it also only understands a handful of topics.</p>
+      <div id="assistant-chat-log" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px; max-height:340px; overflow-y:auto;"></div>
+      <div id="assistant-chips" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;"></div>
+      <div style="display:flex; gap:8px;">
+        <input id="assistant-input" placeholder="Ask about today, this week, follow-ups, learning..." onkeydown="if(event.key==='Enter') sendAssistantMessage()" />
+        <button class="btn-primary btn-sm" onclick="sendAssistantMessage()">Send</button>
+      </div>
+    </div>
 
     <div class="card">
       <div class="ring-wrap">
@@ -1010,7 +1019,6 @@ let certificates = [];
 let experienceEntries = [];
 let educationEntries = [];
 let projectEntries = [];
-let dailyReflections = {};
 let documents = { clean: '', raw: '' };
 let currentDoc = 'clean';
 let checklistState = { date: null, checks: {} };
@@ -1037,7 +1045,8 @@ async function init() {
   syncStatus = await loadData('syncStatus', { resume: null, portfolio: null, linkedin: null });
   pendingSync = await loadData('pendingSync', []);
   certificates = await loadData('certificates', []);
-  dailyReflections = await loadData('dailyReflections', {});
+  const savedChat = await loadData('assistantChat', { date: null, messages: [] });
+  assistantChatHistory = savedChat.date === todayISO() ? (savedChat.messages || []) : [];
   documents = await loadData('documents', { clean: CLEAN_RESUME_TEXT, raw: RAW_DUMP_TEXT, cleanSaved: null, rawSaved: null });
   if (!documents.clean) documents.clean = CLEAN_RESUME_TEXT;
   if (!documents.raw) documents.raw = RAW_DUMP_TEXT;
@@ -1221,8 +1230,10 @@ async function markSynced(key) {
 }
 
 // ============================================================
-// TODAY — always-available summary + personal journal (no AI call,
-// no API key, no cost — works reliably on any deployment)
+// TODAY'S ASSISTANT — chat-bubble UI backed by pattern-matched intents,
+// not a real LLM. No API key, no cost, no network call, so it can't
+// break the way the API-based version did. Honest tradeoff: it only
+// understands a handful of topics, not open-ended free text.
 // ============================================================
 function computeTodaySummary() {
   const today = todayISO();
@@ -1233,11 +1244,11 @@ function computeTodaySummary() {
 
   const lines = [];
   if (todaysApps.length === 0) {
-    lines.push('No applications logged yet today — even one or two keeps momentum going.');
+    lines.push('No applications logged yet today \u2014 even one or two keeps momentum going.');
   } else if (todaysApps.length < 20) {
-    lines.push(`You've logged ${todaysApps.length} application${todaysApps.length === 1 ? '' : 's'} today (${todaysApps.map(a => a.company).join(', ')}) — ${20 - todaysApps.length} more would hit your daily goal of 20.`);
+    lines.push(`You've logged ${todaysApps.length} application${todaysApps.length === 1 ? '' : 's'} today (${todaysApps.map(a => a.company).join(', ')}) \u2014 ${20 - todaysApps.length} more would hit your daily goal of 20.`);
   } else {
-    lines.push(`You hit your daily goal — ${todaysApps.length} applications logged today. Nice work.`);
+    lines.push(`You hit your daily goal \u2014 ${todaysApps.length} applications logged today. Nice work.`);
   }
 
   if (checkedCount === DAILY_TASKS.length) {
@@ -1247,40 +1258,96 @@ function computeTodaySummary() {
   }
 
   if (followupCount > 0) {
-    lines.push(`${followupCount} application${followupCount === 1 ? ' is' : 's are'} 7+ days old with no response — worth a follow-up.`);
+    lines.push(`${followupCount} application${followupCount === 1 ? ' is' : 's are'} 7+ days old with no response \u2014 worth a follow-up.`);
   }
 
   return lines.join(' ');
 }
 
-function renderReflectionSection() {
-  const el = document.getElementById('reflection-section');
-  if (!el) return;
-  const today = todayISO();
-  const note = dailyReflections[today] || '';
-
-  el.innerHTML = `
-    <h2 class="section-title">Today<div class="rule"></div></h2>
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13.5px; line-height:1.6;">${escapeHtml(computeTodaySummary())}</div>
-      <div style="margin-top:14px;">
-        <label>Your own notes on today — write, edit, or add to this any time</label>
-        <textarea id="today-note" placeholder="What happened today? What went well, what didn't, what would you do differently tomorrow?" style="min-height:90px;">${escapeHtml(note)}</textarea>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; flex-wrap:wrap; gap:8px;">
-          <span class="sync-date" id="today-note-saved"></span>
-          <button class="btn-primary btn-sm" onclick="saveTodayNote()">Save note</button>
-        </div>
-      </div>
-    </div>`;
+function answerWeek() {
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6);
+  const weekApps = applications.filter(a => new Date(a.date) >= weekAgo);
+  if (!weekApps.length) return "No applications logged in the last 7 days yet.";
+  const interviews = weekApps.filter(a => a.status === 'Interview' || a.status === 'Offer').length;
+  return `You've logged ${weekApps.length} application${weekApps.length === 1 ? '' : 's'} in the last 7 days: ${weekApps.map(a => a.company).join(', ')}.${interviews ? ` ${interviews} of those are at Interview or Offer stage.` : ''}`;
 }
 
-async function saveTodayNote() {
-  const today = todayISO();
-  const text = document.getElementById('today-note').value;
-  dailyReflections[today] = text;
-  await saveData('dailyReflections', dailyReflections);
-  const savedEl = document.getElementById('today-note-saved');
-  if (savedEl) savedEl.textContent = 'Saved ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function answerFollowup() {
+  const due = applications.filter(a => a.status === 'Applied' && daysAgo(a.date) >= 7);
+  if (!due.length) return "Nothing needs a follow-up right now \u2014 you're caught up.";
+  return `${due.length} application${due.length === 1 ? ' needs' : 's need'} a follow-up: ${due.map(a => `${a.company} (${daysAgo(a.date)}d)`).join(', ')}.`;
+}
+
+function answerLearning() {
+  const completedTopics = topics.filter(t => t.status === 'completed').length;
+  const inProgress = topics.filter(t => t.status === 'in-progress').length;
+  return `${completedTopics} learning topic${completedTopics === 1 ? '' : 's'} completed, ${inProgress} in progress. ${certificates.length ? `${certificates.length} certificate${certificates.length === 1 ? '' : 's'} logged.` : 'No certificates logged yet.'}`;
+}
+
+function answerStats() {
+  const interviewCount = applications.filter(a => a.status === 'Interview' || a.status === 'Offer').length;
+  const followupCount = applications.filter(a => a.status === 'Applied' && daysAgo(a.date) >= 7).length;
+  return `Total applications logged: ${applications.length}. Interviews/offers: ${interviewCount}. ${followupCount ? `${followupCount} need follow-up.` : 'Nothing overdue for follow-up.'}`;
+}
+
+const ASSISTANT_INTENTS = [
+  { label: 'What did I do today?', triggers: ['today', 'what did i do'], answer: computeTodaySummary },
+  { label: "How's this week going?", triggers: ['week'], answer: answerWeek },
+  { label: 'What needs follow-up?', triggers: ['follow up', 'followup', 'overdue', 'pending'], answer: answerFollowup },
+  { label: 'What have I been learning?', triggers: ['learn', 'certificate', 'cert', 'course', 'topic'], answer: answerLearning },
+  { label: 'How am I doing overall?', triggers: ['on track', 'goal', 'overall', 'progress', 'how am i doing', 'stats'], answer: answerStats },
+];
+
+function routeAssistantMessage(msg) {
+  const lower = msg.toLowerCase();
+  if (lower.length < 20 && /\b(hi|hello|hey)\b/.test(lower)) {
+    return 'Hey! Ask me about today, this week, follow-ups, or your learning progress \u2014 or tap a button below.';
+  }
+  const hit = ASSISTANT_INTENTS.find(i => i.triggers.some(t => lower.includes(t)));
+  if (hit) return hit.answer();
+  return "I'm a simple rule-based assistant, not a real AI \u2014 I only understand a few specific topics. Try one of the buttons below, or ask about \"today\", \"this week\", \"follow-ups\", or \"learning\".";
+}
+
+let assistantChatHistory = [];
+
+function ensureAssistantGreeting() {
+  if (assistantChatHistory.length === 0) {
+    assistantChatHistory.push({ role: 'assistant', text: 'Hi! ' + computeTodaySummary() + ' Ask me about today, this week, follow-ups, or learning \u2014 or tap a button below.' });
+  }
+}
+
+function renderAssistantChat() {
+  const log = document.getElementById('assistant-chat-log');
+  if (!log) return;
+  log.innerHTML = assistantChatHistory.map(m => `
+    <div style="align-self:${m.role === 'user' ? 'flex-end' : 'flex-start'}; max-width:85%; background:${m.role === 'user' ? 'var(--accent-dim)' : 'var(--surface2)'}; color:${m.role === 'user' ? '#E7ECF2' : 'var(--text)'}; border-radius:8px; padding:8px 12px; font-size:13px; line-height:1.5;">${escapeHtml(m.text)}</div>
+  `).join('');
+  log.scrollTop = log.scrollHeight;
+
+  const chips = document.getElementById('assistant-chips');
+  if (chips) {
+    chips.innerHTML = ASSISTANT_INTENTS.map(i => `<button class="btn-secondary btn-sm" onclick="askAssistant(${JSON.stringify(i.label)})">${escapeHtml(i.label)}</button>`).join('');
+  }
+}
+
+async function askAssistant(text) {
+  assistantChatHistory.push({ role: 'user', text });
+  assistantChatHistory.push({ role: 'assistant', text: routeAssistantMessage(text) });
+  renderAssistantChat();
+  await saveData('assistantChat', { date: todayISO(), messages: assistantChatHistory });
+}
+
+function sendAssistantMessage() {
+  const input = document.getElementById('assistant-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  askAssistant(msg);
+}
+
+function renderReflectionSection() {
+  ensureAssistantGreeting();
+  renderAssistantChat();
 }
 
 // ============================================================
