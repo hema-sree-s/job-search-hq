@@ -110,6 +110,11 @@
   .doc-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
   .doc-tab { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); }
   .doc-tab.active { color: var(--accent); border-color: var(--accent-dim); }
+  .sub-tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .sub-tab { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); }
+  .sub-tab.active { color: var(--accent); border-color: var(--accent-dim); }
+  .sub-panel { display: none; }
+  .sub-panel.active { display: block; }
   textarea.doc-view { min-height: 420px; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; line-height: 1.6; white-space: pre; }
 
   .sync-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 8px; }
@@ -252,11 +257,8 @@
   <div class="tabs">
     <button class="tab active" data-tab="dashboard">Dashboard</button>
     <button class="tab" data-tab="applications">Applications</button>
-    <button class="tab" data-tab="targets">Target Companies</button>
     <button class="tab" data-tab="learning">Learning</button>
-    <button class="tab" data-tab="certificates">Certificates</button>
-    <button class="tab" data-tab="resume-builder">Resume Builder</button>
-    <button class="tab" data-tab="documents">Documents</button>
+    <button class="tab" data-tab="resume">Resume</button>
     <button class="tab" data-tab="profile">Profile</button>
   </div>
 
@@ -293,58 +295,77 @@
 
   <!-- APPLICATIONS -->
   <div class="panel" id="panel-applications">
-    <div class="card" style="margin-bottom:14px;">
-      <h2 class="section-title" style="margin-top:0;">Quick add<div class="rule"></div></h2>
-      <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <input id="qa-company" placeholder="Company name" style="flex:1; min-width:180px;" onkeydown="if(event.key==='Enter') quickAdd()" />
-        <button class="btn-primary" onclick="quickAdd()">Log it (Applied, today)</button>
-      </div>
-      <p style="color:var(--text-muted); font-size:12px; margin:10px 0 0;">Fills in today's date, status "Applied", source "Job Board" automatically. Edit details on the row after if needed.</p>
+    <div class="sub-tabs">
+      <button class="sub-tab active" data-sub="applications" data-group="applications" onclick="switchSubTab('applications','applications')">My Applications</button>
+      <button class="sub-tab" data-sub="targets" data-group="applications" onclick="switchSubTab('applications','targets')">Target Companies</button>
     </div>
 
-    <details style="margin-bottom:18px;">
-      <summary style="cursor:pointer; color:var(--text-muted); font-size:13px; padding:8px 0;">Add with full detail instead</summary>
-      <div class="card" style="margin-top:10px;">
-        <div class="form-row">
-          <div><label>Company</label><input id="f-company" placeholder="e.g. Amazon" /></div>
-          <div><label>Role</label><input id="f-role" placeholder="e.g. Software Engineer I" /></div>
-          <div><label>Link</label><input id="f-link" placeholder="https://..." /></div>
+    <div class="sub-panel active" id="sub-applications">
+      <div class="card" style="margin-bottom:14px;">
+        <h2 class="section-title" style="margin-top:0;">Quick add<div class="rule"></div></h2>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <input id="qa-company" placeholder="Company name" style="flex:1; min-width:180px;" onkeydown="if(event.key==='Enter') quickAdd()" />
+          <button class="btn-primary" onclick="quickAdd()">Log it (Applied, today)</button>
         </div>
-        <div class="form-row">
-          <div><label>Source</label>
-            <select id="f-source">
-              <option>Referral</option><option>Job Board</option><option>Company Site</option><option>Cold Apply</option>
-            </select>
-          </div>
-          <div><label>Known Sponsor?</label>
-            <select id="f-sponsor"><option>Unknown</option><option>Yes</option><option>No</option></select>
-          </div>
-          <div><label>Status</label>
-            <select id="f-status"><option>Applied</option><option>Interview</option><option>Offer</option><option>Rejected</option><option>Ghosted</option></select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div><label>Recruiter/Contact Name (optional)</label><input id="f-contact-name" placeholder="e.g. Jane Smith" /></div>
-          <div><label>Contact Email (optional)</label><input id="f-contact-email" placeholder="jane@company.com" /></div>
-          <div><label>Notes</label><input id="f-notes" placeholder="optional" /></div>
-        </div>
-        <button class="btn-primary" onclick="addApplication()">Add application</button>
+        <p style="color:var(--text-muted); font-size:12px; margin:10px 0 0;">Fills in today's date, status "Applied", source "Job Board" automatically. Edit details on the row after if needed.</p>
       </div>
-    </details>
 
-    <h2 class="section-title" style="margin-top:0;">Log<div class="rule"></div></h2>
-    <div style="display:flex; gap:8px; margin-bottom:12px;">
-      <button class="btn-secondary btn-sm" id="apps-view-table-btn" onclick="setApplicationsView('table')">Table view</button>
-      <button class="btn-secondary btn-sm" id="apps-view-board-btn" onclick="setApplicationsView('board')">Board view</button>
+      <details style="margin-bottom:18px;">
+        <summary style="cursor:pointer; color:var(--text-muted); font-size:13px; padding:8px 0;">Add with full detail instead</summary>
+        <div class="card" style="margin-top:10px;">
+          <div class="form-row">
+            <div><label>Company</label><input id="f-company" placeholder="e.g. Amazon" /></div>
+            <div><label>Role</label><input id="f-role" placeholder="e.g. Software Engineer I" /></div>
+            <div><label>Link</label><input id="f-link" placeholder="https://..." /></div>
+          </div>
+          <div class="form-row">
+            <div><label>Source</label>
+              <select id="f-source">
+                <option>Referral</option><option>Job Board</option><option>Company Site</option><option>Cold Apply</option>
+              </select>
+            </div>
+            <div><label>Known Sponsor?</label>
+              <select id="f-sponsor"><option>Unknown</option><option>Yes</option><option>No</option></select>
+            </div>
+            <div><label>Status</label>
+              <select id="f-status"><option>Applied</option><option>Interview</option><option>Offer</option><option>Rejected</option><option>Ghosted</option></select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div><label>Recruiter/Contact Name (optional)</label><input id="f-contact-name" placeholder="e.g. Jane Smith" /></div>
+            <div><label>Contact Email (optional)</label><input id="f-contact-email" placeholder="jane@company.com" /></div>
+            <div><label>Notes</label><input id="f-notes" placeholder="optional" /></div>
+          </div>
+          <button class="btn-primary" onclick="addApplication()">Add application</button>
+        </div>
+      </details>
+
+      <h2 class="section-title" style="margin-top:0;">Log<div class="rule"></div></h2>
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <button class="btn-secondary btn-sm" id="apps-view-table-btn" onclick="setApplicationsView('table')">Table view</button>
+        <button class="btn-secondary btn-sm" id="apps-view-board-btn" onclick="setApplicationsView('board')">Board view</button>
+      </div>
+      <div class="card" id="applications-table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Company</th><th>Role</th><th>Source</th><th>Sponsor</th><th>Status</th><th></th></tr></thead>
+          <tbody id="applications-table"></tbody>
+        </table>
+        <div class="empty" id="applications-empty" style="display:none;">No applications logged yet — use Quick Add above.</div>
+      </div>
+      <div id="applications-board-wrap" style="display:none;"></div>
     </div>
-    <div class="card" id="applications-table-wrap">
-      <table>
-        <thead><tr><th>Date</th><th>Company</th><th>Role</th><th>Source</th><th>Sponsor</th><th>Status</th><th></th></tr></thead>
-        <tbody id="applications-table"></tbody>
-      </table>
-      <div class="empty" id="applications-empty" style="display:none;">No applications logged yet — use Quick Add above.</div>
+
+    <div class="sub-panel" id="sub-targets">
+      <p style="color:var(--text-muted); font-size:13px;">Companies with a track record of sponsoring OPT/H-1B candidates. Prioritize these in your daily 20 — aim for at least 3-5 a day from this list.</p>
+      <div class="card">
+        <table class="tc-table">
+          <thead><tr><th>Company</th><th>Track Record</th><th>Applied?</th><th>Referral Contact</th><th>Notes</th></tr></thead>
+          <tbody id="targets-table"></tbody>
+        </table>
+        <button class="btn-primary btn-sm" style="margin-top:14px;" onclick="saveTargets()">Save changes</button>
+        <span class="sync-date" id="targets-saved" style="margin-left:10px;"></span>
+      </div>
     </div>
-    <div id="applications-board-wrap" style="display:none;"></div>
   </div>
 
   <!-- EDIT APPLICATION MODAL -->
@@ -381,58 +402,58 @@
     </div>
   </div>
 
-  <!-- TARGET COMPANIES -->
-  <div class="panel" id="panel-targets">
-    <p style="color:var(--text-muted); font-size:13px;">Companies with a track record of sponsoring OPT/H-1B candidates. Prioritize these in your daily 20 — aim for at least 3-5 a day from this list.</p>
-    <div class="card">
-      <table class="tc-table">
-        <thead><tr><th>Company</th><th>Track Record</th><th>Applied?</th><th>Referral Contact</th><th>Notes</th></tr></thead>
-        <tbody id="targets-table"></tbody>
-      </table>
-      <button class="btn-primary btn-sm" style="margin-top:14px;" onclick="saveTargets()">Save changes</button>
-      <span class="sync-date" id="targets-saved" style="margin-left:10px;"></span>
-    </div>
-  </div>
-
   <!-- LEARNING -->
   <div class="panel" id="panel-learning">
-    <h2 class="section-title" style="margin-top:0;">Certification Roadmap — complete in order<div class="rule"></div></h2>
-    <p style="color:var(--text-muted); font-size:13px; margin-top:-8px;">Sequenced to build on what you already have — each one leverages the last. Ask Claude weekly if you want this reordered based on how interviews are going.</p>
-    <div class="card" id="roadmap-card" style="margin-bottom:24px;"></div>
-
-    <div class="card" style="margin-bottom:18px;">
-      <h2 class="section-title" style="margin-top:0;">Add a custom topic<div class="rule"></div></h2>
-      <div class="form-row">
-        <div><label>Topic name</label><input id="lt-name" placeholder="e.g. Kubernetes basics" /></div>
-        <div><label>Category</label><input id="lt-category" placeholder="e.g. Cloud & DevOps" /></div>
-        <div><label>Source URL (optional)</label><input id="lt-url" placeholder="https://..." /></div>
-      </div>
-      <button class="btn-primary" onclick="addTopic()">Add topic</button>
+    <div class="sub-tabs">
+      <button class="sub-tab active" data-sub="roadmap" data-group="learning" onclick="switchSubTab('learning','roadmap')">Roadmap & Topics</button>
+      <button class="sub-tab" data-sub="certs" data-group="learning" onclick="switchSubTab('learning','certs')">Certificates</button>
     </div>
-    <div id="topics-list"></div>
+
+    <div class="sub-panel active" id="sub-roadmap">
+      <h2 class="section-title" style="margin-top:0;">Certification Roadmap — complete in order<div class="rule"></div></h2>
+      <p style="color:var(--text-muted); font-size:13px; margin-top:-8px;">Sequenced to build on what you already have — each one leverages the last. Ask Claude weekly if you want this reordered based on how interviews are going.</p>
+      <div class="card" id="roadmap-card" style="margin-bottom:24px;"></div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 class="section-title" style="margin-top:0;">Add a custom topic<div class="rule"></div></h2>
+        <div class="form-row">
+          <div><label>Topic name</label><input id="lt-name" placeholder="e.g. Kubernetes basics" /></div>
+          <div><label>Category</label><input id="lt-category" placeholder="e.g. Cloud & DevOps" /></div>
+          <div><label>Source URL (optional)</label><input id="lt-url" placeholder="https://..." /></div>
+        </div>
+        <button class="btn-primary" onclick="addTopic()">Add topic</button>
+      </div>
+      <div id="topics-list"></div>
+    </div>
+
+    <div class="sub-panel" id="sub-certs">
+      <h2 class="section-title" style="margin-top:0;">Certificates<div class="rule"></div></h2>
+      <div class="card" style="margin-bottom:24px;">
+        <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Log any certificate you've completed — from the roadmap above or anywhere else. Adding one here automatically reminds you (on the Dashboard) to update your resume, portfolio, and LinkedIn.</p>
+        <div class="form-row">
+          <div><label>Certificate name</label><input id="cert-name" placeholder="e.g. AWS Cloud Practitioner" /></div>
+          <div><label>Issuer (optional)</label><input id="cert-issuer" placeholder="e.g. Amazon Web Services" /></div>
+          <div><label>Date earned</label><input id="cert-date" type="date" /></div>
+        </div>
+        <div class="form-row">
+          <div><label>Credential URL (optional)</label><input id="cert-url" placeholder="https://..." /></div>
+        </div>
+        <button class="btn-primary" onclick="addCertificate()">Add certificate</button>
+      </div>
+      <div id="certificates-list"></div>
+    </div>
   </div>
 
-  <!-- CERTIFICATES -->
-  <div class="panel" id="panel-certificates">
-    <h2 class="section-title" style="margin-top:0;">Certificates<div class="rule"></div></h2>
-    <div class="card" style="margin-bottom:24px;">
-      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Log any certificate you've completed — from the Learning roadmap or anywhere else. Adding one here automatically reminds you (on the Dashboard) to update your resume, portfolio, and LinkedIn.</p>
-      <div class="form-row">
-        <div><label>Certificate name</label><input id="cert-name" placeholder="e.g. AWS Cloud Practitioner" /></div>
-        <div><label>Issuer (optional)</label><input id="cert-issuer" placeholder="e.g. Amazon Web Services" /></div>
-        <div><label>Date earned</label><input id="cert-date" type="date" /></div>
-      </div>
-      <div class="form-row">
-        <div><label>Credential URL (optional)</label><input id="cert-url" placeholder="https://..." /></div>
-      </div>
-      <button class="btn-primary" onclick="addCertificate()">Add certificate</button>
+  <!-- RESUME (Builder + Documents + Score & Match, merged) -->
+  <div class="panel" id="panel-resume">
+    <div class="sub-tabs">
+      <button class="sub-tab active" data-sub="builder" data-group="resume" onclick="switchSubTab('resume','builder')">Builder</button>
+      <button class="sub-tab" data-sub="docs" data-group="resume" onclick="switchSubTab('resume','docs')">Documents</button>
+      <button class="sub-tab" data-sub="score" data-group="resume" onclick="switchSubTab('resume','score')">Score & Match</button>
     </div>
-    <div id="certificates-list"></div>
-  </div>
 
-  <!-- RESUME BUILDER -->
-  <div class="panel" id="panel-resume-builder">
-    <p style="color:var(--text-muted); font-size:13px; margin-top:0;">This is where "everything about you" actually lives — as structured entries, not a wall of text. Fill these in once, reuse them forever. When you're ready to write your resume, click "Generate Clean ATS Resume" below to assemble all of it into the Documents tab as a starting draft you can then trim and polish.</p>
+    <div class="sub-panel active" id="sub-builder">
+    <p style="color:var(--text-muted); font-size:13px; margin-top:0;">This is where "everything about you" actually lives — as structured entries, not a wall of text. Fill these in once, reuse them forever. When you're ready to write your resume, click "Generate Clean ATS Resume" below to assemble all of it into the Documents sub-tab as a starting draft you can then trim and polish.</p>
 
     <h2 class="section-title" style="margin-top:0;">Work Experience<div class="rule"></div></h2>
     <div class="card" style="margin-bottom:20px;">
@@ -485,13 +506,12 @@
     </div>
 
     <div class="card" style="margin-bottom:20px;">
-      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Assembles your contact info (Profile tab), experience, education, projects, and skills above into a formatted plain-text draft in Documents \u2192 Clean ATS Resume.</p>
+      <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Assembles your contact info (Profile tab), experience, education, projects, and skills above into a formatted plain-text draft in the Documents sub-tab \u2192 Clean ATS Resume.</p>
       <button class="btn-primary" onclick="generateResumeFromBuilder()">Generate Clean ATS Resume</button>
     </div>
-  </div>
+    </div>
 
-  <!-- DOCUMENTS -->
-  <div class="panel" id="panel-documents">
+    <div class="sub-panel" id="sub-docs">
     <div class="doc-tabs">
       <button class="doc-tab active" data-doc="clean" onclick="switchDoc('clean')">Clean ATS Resume</button>
       <button class="doc-tab" data-doc="raw" onclick="switchDoc('raw')">Raw Data Dump</button>
@@ -515,6 +535,24 @@
           <button class="btn-secondary btn-sm" onclick="downloadDoc('doc')">Download Word (.doc)</button>
           <button class="btn-primary btn-sm" onclick="saveDoc()">Save changes</button>
         </div>
+      </div>
+    </div>
+    </div>
+
+    <div class="sub-panel" id="sub-score">
+      <h2 class="section-title" style="margin-top:0;">ATS Resume Score<div class="rule"></div></h2>
+      <div class="card" style="margin-bottom:20px;">
+        <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Checks your Clean ATS Resume (from the Documents sub-tab) against the same kind of formatting and content rules real ATS-checker tools use — standard sections, quantified bullets, action verbs, contact info, length. This runs entirely in your browser; nothing is sent anywhere.</p>
+        <button class="btn-primary" onclick="runResumeScore()">Score my resume</button>
+        <div id="resume-score-results" style="margin-top:16px;"></div>
+      </div>
+
+      <h2 class="section-title">Job Description Match<div class="rule"></div></h2>
+      <div class="card" style="margin-bottom:20px;">
+        <p style="color:var(--text-muted); font-size:13px; margin-top:0;">Paste a job description below. This compares its key terms against your Clean ATS Resume and shows what's already covered and what's likely missing — the same core idea behind keyword-match tools, done with simple, transparent text comparison instead of a black-box score.</p>
+        <div class="profile-field"><textarea id="jd-input" placeholder="Paste the full job description here..." style="min-height:140px;"></textarea></div>
+        <button class="btn-primary" onclick="runJDMatch()">Analyze match</button>
+        <div id="jd-match-results" style="margin-top:16px;"></div>
       </div>
     </div>
   </div>
@@ -1060,6 +1098,33 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
+// Sub-tabs nested within a top-level tab (Applications > My Applications/Target
+// Companies, Learning > Roadmap/Certificates, Resume > Builder/Documents/Score).
+function switchSubTab(group, sub) {
+  if (group === 'resume' && sub !== 'docs' && docDirty && !confirm('You have unsaved changes in Documents. Switch and discard them?')) return;
+  if (group === 'applications' && sub !== 'targets' && targetsDirty && !confirm('You have unsaved changes in Target Companies. Switch and discard them?')) return;
+  if (group === 'resume' && sub === 'docs') docDirty = false;
+  if (group === 'applications' && sub === 'targets') targetsDirty = false;
+
+  document.querySelectorAll(`.sub-tab[data-group="${group}"]`).forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
+  const idMap = { applications: 'applications', targets: 'targets', roadmap: 'roadmap', certs: 'certs', builder: 'builder', docs: 'docs', score: 'score' };
+  const panelIds = group === 'applications' ? ['applications', 'targets']
+    : group === 'learning' ? ['roadmap', 'certs']
+    : ['builder', 'docs', 'score'];
+  panelIds.forEach(id => {
+    const el = document.getElementById('sub-' + id);
+    if (el) el.classList.toggle('active', id === sub);
+  });
+}
+
+// Used after resume upload / resume generation to land the person directly
+// on the result inside the merged Resume tab.
+function goToResumeDocs(which) {
+  document.querySelector('[data-tab=resume]').click();
+  switchSubTab('resume', 'docs');
+  switchDoc(which);
+}
+
 // ============================================================
 // DASHBOARD
 // ============================================================
@@ -1581,8 +1646,7 @@ async function handleResumeUpload() {
     fileInput.value = '';
 
     // Jump straight to the result instead of leaving the user to go find it.
-    document.querySelector('[data-tab=documents]').click();
-    switchDoc('raw');
+    goToResumeDocs('raw');
   } catch (e) {
     statusEl.textContent = 'Could not read that file: ' + e.message;
   } finally {
@@ -1943,8 +2007,146 @@ async function generateResumeFromBuilder() {
   await saveData('documents', documents);
   docDirty = false;
 
-  document.querySelector('[data-tab=documents]').click();
-  switchDoc('clean');
+  goToResumeDocs('clean');
+}
+
+// ============================================================
+// ATS RESUME SCORE & JOB DESCRIPTION MATCH
+// Pure client-side text analysis — no AI call, no API key, no cost,
+// nothing leaves the browser. Approximates the same checks real ATS
+// checker tools use (standard sections, quantified bullets, action verbs,
+// contact info, length) and the same core idea behind keyword-match
+// tools (compare resume text against a job description's key terms).
+// ============================================================
+const ACTION_VERBS = ['led', 'built', 'developed', 'managed', 'implemented', 'designed', 'created', 'improved', 'increased', 'reduced', 'achieved', 'launched', 'optimized', 'automated', 'architected', 'delivered', 'drove', 'established', 'executed', 'generated', 'grew', 'initiated', 'introduced', 'mentored', 'migrated', 'negotiated', 'organized', 'oversaw', 'pioneered', 'reengineered', 'resolved', 'spearheaded', 'streamlined', 'strengthened', 'transformed', 'deployed', 'engineered', 'analyzed', 'coordinated', 'collaborated', 'conducted', 'wrote', 'presented'];
+
+function scoreResumeText(text) {
+  const checks = [];
+  const t = text || '';
+  const lines = t.split('\n').map(l => l.trim()).filter(Boolean);
+  const bulletLines = lines.filter(l => l.startsWith('- ') || l.startsWith('* '));
+  const wordCount = (t.match(/\S+/g) || []).length;
+
+  const hasEmail = /[\w.+-]+@[\w-]+\.[\w.-]+/.test(t);
+  const hasPhone = /(\+?\d[\d\-\s().]{7,}\d)/.test(t);
+  checks.push({ label: 'Email address present', pass: hasEmail, points: 8, tip: 'Add your email near the top so recruiters and ATS software can find it.' });
+  checks.push({ label: 'Phone number present', pass: hasPhone, points: 5, tip: 'Add a phone number near the top.' });
+
+  const lengthOk = wordCount >= 250 && wordCount <= 900;
+  checks.push({ label: `Resume length (${wordCount} words)`, pass: lengthOk, points: 12, tip: wordCount < 250 ? 'This looks thin \u2014 most one-page resumes run 250\u2013500 words.' : 'This looks long \u2014 consider trimming to roughly 400\u2013900 words (1\u20132 pages).' });
+
+  const sectionHeaders = lines.filter(l => l.startsWith('## ')).map(l => l.slice(3).toLowerCase());
+  const hasExperience = sectionHeaders.some(h => h.includes('experience') || h.includes('work'));
+  const hasEducation = sectionHeaders.some(h => h.includes('education'));
+  const hasSkills = sectionHeaders.some(h => h.includes('skill'));
+  checks.push({ label: 'Has an Experience section', pass: hasExperience, points: 10, tip: 'Add a "## Experience" section header.' });
+  checks.push({ label: 'Has an Education section', pass: hasEducation, points: 8, tip: 'Add a "## Education" section header.' });
+  checks.push({ label: 'Has a Skills section', pass: hasSkills, points: 8, tip: 'Add a "## Skills" section header with a comma-separated list.' });
+
+  checks.push({ label: 'Uses bullet points', pass: bulletLines.length >= 3, points: 10, tip: 'Start lines with "- " to list accomplishments as bullets \u2014 easier for both humans and ATS to scan than paragraphs.' });
+
+  const quantified = bulletLines.filter(l => /\d/.test(l));
+  const quantifiedRatio = bulletLines.length ? quantified.length / bulletLines.length : 0;
+  checks.push({ label: `Bullets include numbers/results (${quantified.length}/${bulletLines.length})`, pass: quantifiedRatio >= 0.3, points: 15, tip: 'Add measurable results where you can \u2014 %, $, counts, time saved. Numbers are one of the strongest signals both recruiters and ATS scoring look for.' });
+
+  const actionVerbBullets = bulletLines.filter(l => {
+    const firstWord = l.replace(/^[-*]\s*/, '').split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
+    return ACTION_VERBS.includes(firstWord);
+  });
+  const actionRatio = bulletLines.length ? actionVerbBullets.length / bulletLines.length : 0;
+  checks.push({ label: `Bullets start with strong action verbs (${actionVerbBullets.length}/${bulletLines.length})`, pass: actionRatio >= 0.5, points: 12, tip: 'Start bullets with strong verbs like "Built", "Led", "Improved", "Reduced" instead of "Responsible for" or "Worked on".' });
+
+  const hasFirstPerson = /\b(I|me|my|mine)\b/.test(t);
+  checks.push({ label: 'Avoids first-person pronouns (I, me, my)', pass: !hasFirstPerson, points: 7, tip: 'Remove "I", "me", "my" \u2014 resumes are written in an implied first person without stating it.' });
+
+  const longLines = lines.filter(l => !l.startsWith('#') && l.length > 300);
+  checks.push({ label: 'No overly long unbroken paragraphs', pass: longLines.length === 0, points: 5, tip: 'Break up long paragraphs into shorter bullets or sentences.' });
+
+  const totalPoints = checks.reduce((s, c) => s + c.points, 0);
+  const earnedPoints = checks.reduce((s, c) => s + (c.pass ? c.points : 0), 0);
+  const score = Math.round((earnedPoints / totalPoints) * 100);
+
+  return { score, checks };
+}
+
+function runResumeScore() {
+  const text = documents.clean || '';
+  const el = document.getElementById('resume-score-results');
+  if (!text.trim() || text === CLEAN_RESUME_TEXT) {
+    el.innerHTML = `<div class="empty">Your Clean ATS Resume is empty. Build it in the Builder sub-tab, or write/paste it in Documents, then come back here.</div>`;
+    return;
+  }
+
+  const { score, checks } = scoreResumeText(text);
+  const color = score >= 80 ? 'var(--accent)' : score >= 55 ? 'var(--amber)' : 'var(--danger)';
+
+  el.innerHTML = `
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:14px;">
+      <div style="font-family:'Space Grotesk',sans-serif; font-size:36px; font-weight:700; color:${color};">${score}</div>
+      <div style="color:var(--text-muted); font-size:13px;">/ 100</div>
+    </div>
+    ${checks.map(c => `
+      <div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--border);">
+        <div style="color:${c.pass ? 'var(--accent)' : 'var(--danger)'}; font-family:'IBM Plex Mono',monospace; font-size:13px; flex-shrink:0; width:18px;">${c.pass ? '\u2713' : '\u2717'}</div>
+        <div>
+          <div style="font-size:13.5px;">${escapeHtml(c.label)}</div>
+          ${!c.pass ? `<div style="color:var(--text-muted); font-size:12px; margin-top:2px;">${escapeHtml(c.tip)}</div>` : ''}
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+const JD_STOPWORDS = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'for', 'with', 'at', 'by', 'from', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'this', 'that', 'these', 'those', 'it', 'its', 'you', 'your', 'we', 'our', 'they', 'their', 'will', 'shall', 'should', 'would', 'can', 'could', 'may', 'might', 'must', 'have', 'has', 'had', 'not', 'no', 'if', 'than', 'then', 'so', 'such', 'into', 'about', 'over', 'under', 'out', 'up', 'down', 'also', 'including', 'etc', 'role', 'job', 'work', 'years', 'year', 'experience', 'ability', 'skills', 'skill', 'required', 'requirements', 'preferred', 'strong', 'excellent', 'team', 'teams', 'company', 'position', 'looking', 'seeking', 'candidate', 'candidates']);
+
+function extractKeywords(text, limit) {
+  const words = (text.toLowerCase().match(/[a-z][a-z0-9+.#/-]{1,}/g) || []);
+  const freq = {};
+  words.forEach(w => {
+    const clean = w.replace(/^[-/.]+|[-/.]+$/g, '');
+    if (clean.length < 3 || JD_STOPWORDS.has(clean)) return;
+    freq[clean] = (freq[clean] || 0) + 1;
+  });
+  return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, limit).map(e => e[0]);
+}
+
+function runJDMatch() {
+  const jd = document.getElementById('jd-input').value;
+  const resumeText = documents.clean || '';
+  const el = document.getElementById('jd-match-results');
+
+  if (!jd.trim()) { alert('Paste a job description first.'); return; }
+  if (!resumeText.trim() || resumeText === CLEAN_RESUME_TEXT) {
+    el.innerHTML = `<div class="empty">Your Clean ATS Resume is empty \u2014 build it first so there's something to compare against.</div>`;
+    return;
+  }
+
+  const keywords = extractKeywords(jd, 25);
+  const resumeLower = resumeText.toLowerCase();
+  const matched = keywords.filter(k => resumeLower.includes(k));
+  const missing = keywords.filter(k => !resumeLower.includes(k));
+  const pct = keywords.length ? Math.round((matched.length / keywords.length) * 100) : 0;
+  const color = pct >= 70 ? 'var(--accent)' : pct >= 40 ? 'var(--amber)' : 'var(--danger)';
+
+  el.innerHTML = `
+    <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:14px;">
+      <div style="font-family:'Space Grotesk',sans-serif; font-size:36px; font-weight:700; color:${color};">${pct}%</div>
+      <div style="color:var(--text-muted); font-size:13px;">match \u2014 ${matched.length} of ${keywords.length} key terms found</div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label>Found in your resume</label>
+      <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+        ${matched.length ? matched.map(k => `<span style="background:#14251F; color:var(--accent); border:1px solid var(--accent-dim); border-radius:999px; padding:3px 10px; font-size:12px; font-family:'IBM Plex Mono',monospace;">${escapeHtml(k)}</span>`).join('') : '<span style="color:var(--text-muted); font-size:13px;">None yet</span>'}
+      </div>
+    </div>
+    <div>
+      <label>Missing \u2014 consider adding if genuinely true of your experience</label>
+      <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
+        ${missing.length ? missing.map(k => `<span style="background:#2A1616; color:var(--danger); border:1px solid #3A2222; border-radius:999px; padding:3px 10px; font-size:12px; font-family:'IBM Plex Mono',monospace;">${escapeHtml(k)}</span>`).join('') : '<span style="color:var(--text-muted); font-size:13px;">None \u2014 great coverage</span>'}
+      </div>
+    </div>
+    <p style="color:var(--text-muted); font-size:12px; margin-top:14px;">This is simple keyword overlap, not a judgment of whether you're qualified \u2014 never add a skill you don't actually have just to raise this number.</p>
+  `;
 }
 
 // ============================================================
