@@ -1,13 +1,23 @@
 const { getRedis, getJSON, setJSON } = require("../lib/redis");
 const { verifyAuth } = require("../lib/auth");
 
+// Every resource here follows the same contract: an opaque, client-encrypted
+// JSON blob (a string) stored under blob:<resource>:<userId>. The server
+// never sees plaintext content for any of these.
+const ALLOWED_RESOURCES = new Set(["jobs", "resume", "interviews", "learning", "profile", "documents"]);
+
 module.exports = async (req, res) => {
+  const { resource } = req.query;
+  if (!ALLOWED_RESOURCES.has(resource)) {
+    return res.status(404).json({ error: "Unknown resource" });
+  }
+
   const payload = verifyAuth(req);
   if (!payload) return res.status(401).json({ error: "Not authenticated" });
 
   try {
     const redis = getRedis();
-    const key = `blob:jobs:${payload.userId}`;
+    const key = `blob:${resource}:${payload.userId}`;
 
     if (req.method === "GET") {
       const blob = await getJSON(redis, key);

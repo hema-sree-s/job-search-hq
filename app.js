@@ -472,7 +472,7 @@ function UnlockScreen({ username, salt, onUnlocked, onLogout, toast }) {
     try {
       const key = await CRYPTO_HELPERS.deriveKey(password, salt);
       try {
-        const res = await api("/api/jobs");
+        const res = await api("/api/data/jobs");
         const { blob } = await res.json();
         if (blob) await CRYPTO_HELPERS.decryptJSON(key, blob);
       } catch (decryptErr) {
@@ -1427,7 +1427,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     (async () => {
       try {
         const [jobsRes, resumeRes, interviewsRes, learningRes, profileRes, documentsRes] = await Promise.all([
-          api("/api/jobs"), api("/api/resume"), api("/api/interviews"), api("/api/learning"), api("/api/profile"), api("/api/documents"),
+          api("/api/data/jobs"), api("/api/data/resume"), api("/api/data/interviews"), api("/api/data/learning"), api("/api/data/profile"), api("/api/data/documents"),
         ]);
         const jobsBlob = (await jobsRes.json()).blob;
         const resumeBlob = (await resumeRes.json()).blob;
@@ -1462,7 +1462,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     (async () => {
       try {
         const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, jobs);
-        await api("/api/jobs", { method: "PUT", body: JSON.stringify({ blob }) });
+        await api("/api/data/jobs", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
   }, [jobs, loaded]);
@@ -1472,7 +1472,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     (async () => {
       try {
         const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, { text: resumeText, result: resumeResult });
-        await api("/api/resume", { method: "PUT", body: JSON.stringify({ blob }) });
+        await api("/api/data/resume", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
   }, [resumeText, resumeResult, loaded]);
@@ -1482,7 +1482,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     (async () => {
       try {
         const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, interviewData);
-        await api("/api/interviews", { method: "PUT", body: JSON.stringify({ blob }) });
+        await api("/api/data/interviews", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
   }, [interviewData, loaded]);
@@ -1492,7 +1492,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     (async () => {
       try {
         const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, learning);
-        await api("/api/learning", { method: "PUT", body: JSON.stringify({ blob }) });
+        await api("/api/data/learning", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
   }, [learning, loaded]);
@@ -1502,7 +1502,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     (async () => {
       try {
         const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, profile);
-        await api("/api/profile", { method: "PUT", body: JSON.stringify({ blob }) });
+        await api("/api/data/profile", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
   }, [profile, loaded]);
@@ -1512,7 +1512,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     (async () => {
       try {
         const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, documents);
-        await api("/api/documents", { method: "PUT", body: JSON.stringify({ blob }) });
+        await api("/api/data/documents", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
   }, [documents, loaded]);

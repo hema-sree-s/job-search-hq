@@ -174,24 +174,14 @@ job-search-hq/
 ├── app.js                    — the entire frontend app (includes client-side encryption)
 ├── api/
 │   ├── auth/
-│   │   ├── signup.js
-│   │   ├── login.js
-│   │   ├── google.js         — Google Sign-In verification
-│   │   └── me.js
+│   │   └── [action].js       — signup / login / google / me (one function, path-based)
 │   ├── ai/
-│   │   ├── resume-feedback.js
-│   │   ├── match-tips.js
-│   │   └── learning-suggestions.js
+│   │   └── [type].js         — resume-feedback / match-tips / learning-suggestions
+│   ├── data/
+│   │   └── [resource].js     — jobs / resume / interviews / learning / profile / documents metadata
 │   ├── documents/
-│   │   ├── upload.js
-│   │   └── delete.js
-│   ├── jobs.js
-│   ├── resume.js
-│   ├── interviews.js
-│   ├── learning.js
-│   ├── profile.js
-│   ├── documents.js           — document list metadata
-│   └── config.js               — tells the frontend whether Google Sign-In is enabled
+│   │   └── [action].js       — upload / delete
+│   └── config.js              — tells the frontend whether Google Sign-In is enabled
 ├── lib/
 │   ├── redis.js                 — Upstash connection + JSON helpers
 │   ├── auth.js                   — session signing/verification
@@ -202,6 +192,12 @@ job-search-hq/
 └── .env.example                     — reference only; real values go in Vercel's dashboard
 ```
 
-Each file in `api/` automatically becomes a live API route — `api/jobs.js`
-becomes `https://your-app.vercel.app/api/jobs`. Vercel runs each one on
-demand; there's no server to start or stop.
+Each function file above handles multiple routes via a dynamic path segment (e.g.
+`api/auth/[action].js` serves `/api/auth/signup`, `/api/auth/login`, etc.) — this
+keeps the deployment to 5 serverless functions total, comfortably under Vercel
+Hobby's 12-function-per-deployment limit, with room to add more features later.
+
+Each route still becomes a live URL exactly as you'd expect —
+`api/data/[resource].js` becomes `https://your-app.vercel.app/api/data/jobs`,
+`/api/data/resume`, etc. Vercel runs each one on demand; there's no server to
+start or stop.
