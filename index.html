@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Job Search HQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  html, body { margin: 0; padding: 0; }
+  .jshq { font-family: 'IBM Plex Sans', sans-serif; background: #FAF8FF; color: #3D3752; min-height: 100vh; }
+  .jshq-display { font-family: 'Fraunces', serif; }
+  .jshq-mono { font-family: 'IBM Plex Mono', monospace; }
+
+  .bg-ink { background: #FAF8FF; }
+  .bg-ink2 { background: #FFFFFF; }
+  .bg-ink3 { background: #F1ECFB; }
+  .bg-paper { background: #FFF6EC; }
+  .text-paper { color: #3D3752; }
+  .text-main { color: #57516B; }
+  .text-muted { color: #9791AC; }
+  .text-brass { color: #9B7FDB; }
+  .bg-brass { background: #B9A0EA; }
+  .text-ink { color: #3D3752; }
+  .border-hair { border-color: #E7E1F5; }
+  .text-green { color: #4E9C6E; }
+  .text-rust { color: #D97862; }
+  .text-amberc { color: #C99A3D; }
+
+  .jshq ::selection { background: #B9A0EA; color: #3D3752; }
+  .jshq input, .jshq textarea, .jshq select {
+    background: #FFFFFF; border: 1px solid #E3DCF5; color: #3D3752;
+    font-family: inherit; outline: none;
+  }
+  .jshq input:focus, .jshq textarea:focus, .jshq select:focus {
+    border-color: #B9A0EA; box-shadow: 0 0 0 3px rgba(185,160,234,0.22);
+  }
+  .jshq input::placeholder, .jshq textarea::placeholder { color: #B3ADC7; }
+
+  .nav-item { position: relative; transition: color .15s ease, background .15s ease; }
+  .nav-item[data-active="true"] { background: #F1ECFB; color: #3D3752; }
+  .nav-item[data-active="true"]::before {
+    content: ''; position: absolute; left: -1px; top: 8px; bottom: 8px; width: 3px;
+    background: #B9A0EA; border-radius: 0 3px 3px 0;
+  }
+  .nav-item[data-active="false"] { color: #9791AC; }
+  .nav-item[data-active="false"]:hover { color: #57516B; background: #F7F4FC; }
+
+  .btn-primary { background: #B9A0EA; color: #3D3752; transition: filter .15s ease, transform .08s ease; }
+  .btn-primary:hover:not(:disabled) { filter: brightness(0.94); }
+  .btn-primary:active:not(:disabled) { transform: scale(0.97); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-ghost { background: transparent; border: 1px solid #E3DCF5; color: #57516B; transition: border-color .15s ease, color .15s ease; }
+  .btn-ghost:hover { border-color: #B9A0EA; color: #9B7FDB; }
+  .btn-ai { background: linear-gradient(135deg, #F5F0FF, #EFE7FB); border: 1px solid #E0D3F5; color: #3D3752; transition: border-color .15s ease, transform .08s ease; }
+  .btn-ai:hover:not(:disabled) { border-color: #B9A0EA; }
+  .btn-ai:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .job-card { background: #FFF6EC; color: #3D3752; transition: transform .12s ease, box-shadow .12s ease; cursor: grab; }
+  .job-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(61,55,82,0.14); }
+  .job-card.dragging { opacity: 0.4; }
+
+  .stage-col { transition: background .15s ease, border-color .15s ease; }
+  .stage-col.drag-over { background: #F1ECFB; border-color: #B9A0EA; }
+
+  .stat-card { background: #FFFFFF; border: 1px solid #E7E1F5; transition: border-color .15s ease, transform .12s ease; }
+  .stat-card:hover { border-color: #D8CCF0; transform: translateY(-1px); }
+
+  .chip { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid; display: inline-block; }
+
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #E0D3F5; border-radius: 4px; }
+
+  .focus-ring:focus-visible { outline: 2px solid #B9A0EA; outline-offset: 2px; }
+
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeInUp .35s ease both; }
+
+  @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  .skeleton { background: linear-gradient(90deg, #F1ECFB 25%, #FFFFFF 37%, #F1ECFB 63%); background-size: 400% 100%; animation: shimmer 1.4s ease infinite; border-radius: 4px; }
+
+  @keyframes toastIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+  .toast { animation: toastIn .25s ease both; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-type="module" src="/app.js"></script>
+</body>
+</html>
