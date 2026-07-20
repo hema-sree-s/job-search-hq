@@ -1,5 +1,5 @@
-const { getRedis, getJSON, setJSON } = require("../lib/redis");
-const { verifyAuth } = require("../lib/auth");
+const { getRedis, getJSON, setJSON } = require("../../lib/redis");
+const { verifyAuth } = require("../../lib/auth");
 
 // Every resource here follows the same contract: an opaque, client-encrypted
 // JSON blob (a string) stored under blob:<resource>:<userId>. The server
