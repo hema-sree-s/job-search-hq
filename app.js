@@ -104,7 +104,7 @@ const CRYPTO_HELPERS = {
 const TOKEN_KEY = "jshq_token";
 
 if (window.pdfjsLib) {
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js";
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.6.347/pdf.worker.min.js";
 }
 
 // Extracts plain text from a PDF entirely in the browser -- nothing is sent
