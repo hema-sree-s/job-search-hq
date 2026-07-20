@@ -17,10 +17,16 @@ function learningSuggestionsPrompt(body) {
   return `You are a career development coach advising someone who works in or is targeting this role/field: "${roleClean}". Return ONLY valid JSON (no markdown fences, no extra commentary) with this exact shape: {"summary": "2-3 sentences on what's currently most worth focusing on in this field", "topics": ["specific current topic or skill to study", "..."], "certifications": [{"name": "certification name", "provider": "issuing organization", "note": "one sentence on why it's worth pursuing"}]}. Include 6-10 topics, ordered roughly by current relevance, and 4-6 certifications. Keep topics specific and current (e.g. name actual tools, platforms, or techniques relevant in 2026), not generic advice.`;
 }
 
+function profileSuggestionsPrompt(body) {
+  const { resumeText } = body || {};
+  return `You are a career coach helping someone write a professional profile summary from their resume. Return ONLY valid JSON (no markdown fences): {"headline": "a punchy 3-8 word professional headline based on their most recent/prominent role", "bio": "a 2-3 sentence first-person professional summary", "skills": ["skill", "..."]}. Include at most 10 of their most relevant, specific skills (real tools/technologies/methods mentioned or clearly implied, not generic filler). Resume:\n\n${String(resumeText || "").slice(0, 6000)}`;
+}
+
 const PROMPT_BUILDERS = {
   "resume-feedback": resumeFeedbackPrompt,
   "match-tips": matchTipsPrompt,
   "learning-suggestions": learningSuggestionsPrompt,
+  "profile-suggestions": profileSuggestionsPrompt,
 };
 
 module.exports = async (req, res) => {

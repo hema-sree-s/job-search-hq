@@ -41,7 +41,10 @@ async function handleLogin(req, res) {
   if (!userId) return res.status(401).json({ error: "Invalid username or password." });
 
   const user = await getJSON(redis, `user:${userId}`);
-  if (!user || !user.passwordHash) return res.status(401).json({ error: "Invalid username or password." });
+  if (!user) return res.status(401).json({ error: "Invalid username or password." });
+  if (!user.passwordHash) {
+    return res.status(401).json({ error: "This account uses Google Sign-In -- click \"Continue with Google\" instead of logging in with a password." });
+  }
 
   const match = await bcrypt.compare(String(password || ""), user.passwordHash);
   if (!match) return res.status(401).json({ error: "Invalid username or password." });
