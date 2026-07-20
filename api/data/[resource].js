@@ -7,6 +7,7 @@ const { verifyAuth } = require("../../lib/auth");
 const ALLOWED_RESOURCES = new Set(["jobs", "resume", "interviews", "learning", "profile", "documents"]);
 
 module.exports = async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
   const { resource } = req.query;
   if (!ALLOWED_RESOURCES.has(resource)) {
     return res.status(404).json({ error: "Unknown resource" });
