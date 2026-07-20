@@ -102,6 +102,24 @@ const CRYPTO_HELPERS = {
 
 /* ============================== API CLIENT ============================== */
 const TOKEN_KEY = "jshq_token";
+
+if (window.pdfjsLib) {
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js";
+}
+
+// Extracts plain text from a PDF entirely in the browser -- nothing is sent
+// anywhere for this step, consistent with the rest of the app's privacy model.
+async function extractPdfText(arrayBuffer) {
+  if (!window.pdfjsLib) throw new Error("PDF reader didn't load. Check your connection and reload the page.");
+  const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let text = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map((it) => it.str).join(" ") + "\n";
+  }
+  return text.trim();
+}
 const getToken = () => localStorage.getItem(TOKEN_KEY);
 const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
 const clearSession = () => localStorage.removeItem(TOKEN_KEY);
@@ -145,6 +163,41 @@ const SKILLS_BANK = [
 ];
 
 function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+// Local, free, always-works guess at profile info from resume text -- no AI
+// required. Never overwrites; callers merge this with what's already there.
+function guessProfileFromResume(text) {
+  const clean = (text || "").trim();
+  if (!clean) return { headline: "", bio: "", skills: [] };
+  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  // Headline: the first short, name/title-like line near the top that isn't
+  // contact info (email/phone/address-heavy).
+  let headline = "";
+  for (const line of lines.slice(0, 6)) {
+    if (line.length > 3 && line.length <= 70 && !/[@]/.test(line) && !/\d{3}.*\d{4}/.test(line)) {
+      const wordCount = line.split(/\s+/).length;
+      if (wordCount >= 2 && wordCount <= 8) { headline = line; break; }
+    }
+  }
+
+  // Bio: text following a Summary/Objective/Profile heading, up to the next
+  // all-caps-ish section heading or a length cap.
+  let bio = "";
+  const summaryMatch = clean.match(/\b(summary|objective|profile)\b[:\s]*\n?([\s\S]{0,500}?)(\n[A-Z][A-Za-z\s]{2,30}\n|\n\n|$)/i);
+  if (summaryMatch && summaryMatch[2]) {
+    bio = summaryMatch[2].replace(/\s+/g, " ").trim().slice(0, 400);
+  }
+
+  // Skills: reuse the same keyword bank the Resume Scanner / Match Analyzer use.
+  const lower = clean.toLowerCase();
+  const skills = SKILLS_BANK.filter((s) => {
+    const re = new RegExp(`\\b${escapeRegex(s.toLowerCase())}\\b`);
+    return re.test(lower);
+  });
+
+  return { headline, bio, skills };
+}
 
 function analyzeResume(text) {
   const clean = (text || "").trim();
@@ -271,6 +324,39 @@ function ScoreGauge({ score, size = 110 }) {
         <span className="text-muted text-xs jshq-mono" style={{ fontSize: 10 }}>/ 100</span>
       </div>
     </div>
+  );
+}
+
+function UploadPdfButton({ onExtracted, toast, label = "Upload PDF" }) {
+  const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!file) return;
+    if (file.type !== "application/pdf") { toast("error", "Only PDF files are supported."); return; }
+    setBusy(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const text = await extractPdfText(buf);
+      if (!text.trim()) {
+        toast("error", "Couldn't find any text in that PDF -- it may be a scanned image without a text layer.");
+      } else {
+        onExtracted(text);
+        toast("success", "Text extracted from PDF.");
+      }
+    } catch (err) {
+      toast("error", err.message || "Couldn't read that PDF.");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <label className="btn-ghost rounded px-4 py-2 text-sm font-medium flex items-center gap-2 focus-ring cursor-pointer">
+      {busy ? <Icon name="loader" size={16} spin /> : <Icon name="clipboard" size={16} />} {busy ? "Reading..." : label}
+      <input ref={fileInputRef} type="file" accept="application/pdf" onChange={handleFile} className="hidden" disabled={busy} />
+    </label>
   );
 }
 
@@ -471,14 +557,35 @@ function UnlockScreen({ username, salt, onUnlocked, onLogout, toast }) {
     setBusy(true);
     try {
       const key = await CRYPTO_HELPERS.deriveKey(password, salt);
+      let res;
       try {
-        const res = await api("/api/data/jobs");
-        const { blob } = await res.json();
-        if (blob) await CRYPTO_HELPERS.decryptJSON(key, blob);
-      } catch (decryptErr) {
-        setError("Incorrect password.");
+        res = await api("/api/data/jobs");
+      } catch (networkErr) {
+        setError("Couldn't reach the server. Check your connection and try again.");
         setBusy(false);
         return;
+      }
+      if (!res.ok) {
+        setError(`Server error (${res.status}) while checking your passphrase. This usually means the deployment is out of date, not that your passphrase is wrong.`);
+        setBusy(false);
+        return;
+      }
+      let blob;
+      try {
+        ({ blob } = await res.json());
+      } catch (parseErr) {
+        setError("Unexpected response from the server -- the deployment may be out of date.");
+        setBusy(false);
+        return;
+      }
+      if (blob) {
+        try {
+          await CRYPTO_HELPERS.decryptJSON(key, blob);
+        } catch (decryptErr) {
+          setError("Incorrect passphrase.");
+          setBusy(false);
+          return;
+        }
       }
       onUnlocked(key);
     } catch (err) {
@@ -745,6 +852,7 @@ function ResumeScannerTab({ resumeText, setResumeText, resumeResult, setResumeRe
           <button onClick={getAiFeedback} disabled={!resumeText.trim() || ai.status === "loading"} className="btn-ai rounded px-4 py-2 text-sm font-medium flex items-center gap-2 focus-ring">
             <Icon name={ai.status === "loading" ? "loader" : "sparkles"} size={16} spin={ai.status === "loading"} className="text-brass" /> {ai.status === "loading" ? "Thinking..." : "Get AI coaching"}
           </button>
+          <UploadPdfButton onExtracted={setResumeText} toast={toast} label="Upload PDF resume" />
         </div>
       </div>
 
@@ -845,6 +953,7 @@ function MatchAnalyzerTab({ resumeText, setResumeText, toast }) {
         <div>
           <label className="text-xs text-muted jshq-mono uppercase tracking-wide">Your resume</label>
           <textarea value={resumeText} onChange={(e) => setResumeText(e.target.value)} rows={12} className="w-full mt-1 rounded p-3 text-sm resize-none focus-ring scrollbar-thin jshq-mono" placeholder="Paste your resume text here (shared with the Resume Scanner tab)..." />
+          <div className="mt-2"><UploadPdfButton onExtracted={setResumeText} toast={toast} label="Upload PDF resume" /></div>
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -1203,12 +1312,13 @@ function fmtBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function ProfileTab({ username, jobs, resumeResult, learning, profile, setProfile, documents, setDocuments, encryptionKey, toast }) {
+function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profile, setProfile, documents, setDocuments, encryptionKey, toast }) {
   const [editing, setEditing] = useState(false);
   const [headline, setHeadline] = useState(profile.headline);
   const [bio, setBio] = useState(profile.bio);
   const [skillInput, setSkillInput] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [autofilling, setAutofilling] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => { setHeadline(profile.headline); setBio(profile.bio); }, [profile.headline, profile.bio]);
@@ -1232,6 +1342,84 @@ function ProfileTab({ username, jobs, resumeResult, learning, profile, setProfil
 
   const stageCounts = STAGES.map((s) => ({ ...s, count: jobs.filter((j) => j.status === s.key).length }));
   const completedCerts = (learning.certifications || []).filter((c) => c.status === "completed");
+
+  // Merges extracted info into the profile without discarding anything the
+  // person already typed in manually -- headline/bio only fill if currently
+  // empty, skills are added on top of (never replacing) the existing list.
+  const applyExtractedProfile = (guessed) => {
+    setProfile((p) => {
+      const mergedSkills = [...p.skills];
+      for (const s of guessed.skills || []) {
+        if (!mergedSkills.some((x) => x.toLowerCase() === s.toLowerCase())) mergedSkills.push(s);
+      }
+      return {
+        ...p,
+        headline: p.headline || guessed.headline || p.headline,
+        bio: p.bio || guessed.bio || p.bio,
+        skills: mergedSkills,
+      };
+    });
+  };
+
+  const autofillFromText = async (text) => {
+    setAutofilling(true);
+    try {
+      // Local heuristic always runs first -- free, instant, no AI needed.
+      applyExtractedProfile(guessProfileFromResume(text));
+
+      // Optional AI enhancement on top, if configured -- silently skipped
+      // (local result stands) if no ANTHROPIC_API_KEY is set on the deployment.
+      try {
+        const res = await api("/api/ai/profile-suggestions", { method: "POST", body: JSON.stringify({ resumeText: text }) });
+        const result = await res.json();
+        if (result.ok && result.data) applyExtractedProfile(result.data);
+      } catch (e) { /* local heuristic result already applied, fine to skip AI */ }
+
+      toast("success", "Profile updated from your resume.");
+    } catch (err) {
+      toast("error", "Couldn't read that resume.");
+    }
+    setAutofilling(false);
+  };
+
+  const autofillFromUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!file) return;
+    if (file.type !== "application/pdf") { toast("error", "Only PDF files are supported."); return; }
+    setAutofilling(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const text = await extractPdfText(buf);
+      await autofillFromText(text);
+    } catch (err) {
+      toast("error", err.message || "Couldn't read that PDF.");
+      setAutofilling(false);
+    }
+  };
+
+  const decryptDocToBuffer = async (doc) => {
+    const res = await fetch(doc.url);
+    if (!res.ok) throw new Error("Couldn't fetch the file.");
+    const buf = await res.arrayBuffer();
+    const dataB64 = bufToB64(new Uint8Array(buf));
+    return CRYPTO_HELPERS.decryptBytes(encryptionKey, doc.ivB64, dataB64);
+  };
+
+  const autofillFromLatestDocument = async () => {
+    const pdfDocs = documents.filter((d) => d.name.toLowerCase().endsWith(".pdf"));
+    if (pdfDocs.length === 0) { toast("error", "No uploaded PDFs to use yet."); return; }
+    const latest = [...pdfDocs].sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))[0];
+    setAutofilling(true);
+    try {
+      const plainBuf = await decryptDocToBuffer(latest);
+      const text = await extractPdfText(plainBuf);
+      await autofillFromText(text);
+    } catch (err) {
+      toast("error", "Couldn't read that document.");
+      setAutofilling(false);
+    }
+  };
 
   const handleUpload = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -1262,11 +1450,7 @@ function ProfileTab({ username, jobs, resumeResult, learning, profile, setProfil
 
   const handleDownload = async (doc) => {
     try {
-      const res = await fetch(doc.url);
-      if (!res.ok) throw new Error("Couldn't fetch the file.");
-      const buf = await res.arrayBuffer();
-      const dataB64 = bufToB64(new Uint8Array(buf));
-      const plainBuf = await CRYPTO_HELPERS.decryptBytes(encryptionKey, doc.ivB64, dataB64);
+      const plainBuf = await decryptDocToBuffer(doc);
       const blobUrl = URL.createObjectURL(new Blob([plainBuf], { type: "application/pdf" }));
       const a = document.createElement("a");
       a.href = blobUrl; a.download = doc.name;
@@ -1291,7 +1475,26 @@ function ProfileTab({ username, jobs, resumeResult, learning, profile, setProfil
     <div className="space-y-5">
       {/* Header card */}
       <div className="bg-ink2 border border-hair rounded-lg p-5">
-        <div className="flex items-start gap-4">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <p className="text-xs text-muted flex items-start gap-1.5"><Icon name="sparkles" size={13} className="shrink-0 mt-0.5 text-brass" /> Fill headline, bio, and skills automatically from a resume. Never overwrites what you've already typed -- only fills empty fields and adds new skills on top.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {resumeText && resumeText.trim() && (
+            <button onClick={() => autofillFromText(resumeText)} disabled={autofilling} className="btn-ghost rounded px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 focus-ring">
+              {autofilling ? <Icon name="loader" size={13} spin /> : <Icon name="clipboard" size={13} />} Use Resume Scanner text
+            </button>
+          )}
+          {documents.some((d) => d.name.toLowerCase().endsWith(".pdf")) && (
+            <button onClick={autofillFromLatestDocument} disabled={autofilling} className="btn-ghost rounded px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 focus-ring">
+              {autofilling ? <Icon name="loader" size={13} spin /> : <Icon name="clipboard" size={13} />} Use latest uploaded PDF
+            </button>
+          )}
+          <label className="btn-ghost rounded px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 focus-ring cursor-pointer">
+            {autofilling ? <Icon name="loader" size={13} spin /> : <Icon name="plus" size={13} />} Upload a resume PDF
+            <input type="file" accept="application/pdf" onChange={autofillFromUpload} className="hidden" disabled={autofilling} />
+          </label>
+        </div>
+        <div className="flex items-start gap-4 pt-4 border-t border-hair">
           <div className="w-14 h-14 rounded-full bg-ink3 flex items-center justify-center jshq-mono text-paper text-lg shrink-0">{initials(username)}</div>
           <div className="min-w-0 flex-1">
             <h3 className="jshq-display text-lg text-paper">{username}</h3>
@@ -1569,7 +1772,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
             {activeTab === "scanner" && <ResumeScannerTab resumeText={resumeText} setResumeText={setResumeText} resumeResult={resumeResult} setResumeResult={setResumeResult} toast={toast} />}
             {activeTab === "match" && <MatchAnalyzerTab resumeText={resumeText} setResumeText={setResumeText} toast={toast} />}
             {activeTab === "prep" && <InterviewPrepSection jobs={jobs} interviewData={interviewData} setInterviewData={setInterviewData} learning={learning} setLearning={setLearning} toast={toast} />}
-            {activeTab === "profile" && <ProfileTab username={username} jobs={jobs} resumeResult={resumeResult} learning={learning} profile={profile} setProfile={setProfile} documents={documents} setDocuments={setDocuments} encryptionKey={encryptionKey} toast={toast} />}
+            {activeTab === "profile" && <ProfileTab username={username} jobs={jobs} resumeText={resumeText} resumeResult={resumeResult} learning={learning} profile={profile} setProfile={setProfile} documents={documents} setDocuments={setDocuments} encryptionKey={encryptionKey} toast={toast} />}
           </div>
         )}
       </main>
