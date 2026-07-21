@@ -3,10 +3,12 @@ const { list: blobList, del: blobDel } = require("@vercel/blob");
 const { getRedis, getJSON, setJSON } = require("../../lib/redis");
 const { signToken, verifyAuth } = require("../../lib/auth");
 const { verifyGoogleIdToken } = require("../../lib/googleAuth");
+const { sendEmail, emailConfigured } = require("../../lib/email");
+const crypto = require("crypto");
 
 async function handleSignup(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  const { username, password, salt } = req.body || {};
+  const { username, password, salt, email } = req.body || {};
 
   if (!username || typeof username !== "string" || username.trim().length < 2) {
     return res.status(400).json({ error: "Choose a username of at least 2 characters." });
@@ -25,7 +27,8 @@ async function handleSignup(req, res) {
   const passwordHash = await bcrypt.hash(password, 10);
 
   await redis.set(usernameKey, id);
-  await setJSON(redis, `user:${id}`, { id, username: uname, passwordHash, salt: typeof salt === "string" ? salt : "" });
+  await setJSON(redis, `user:${id}`, { id, username: uname, passwordHash, email: (typeof email === "string" && email.includes("@")) ? email.trim() : null, salt: typeof salt === "string" ? salt : "" });
+  await redis.sadd("users:index", id);
 
   res.status(200).json({ token: signToken(id, uname), username: uname, salt });
 }
@@ -84,6 +87,7 @@ async function handleGoogle(req, res) {
       id, username: uname, googleId: payload.sub, email: payload.email || null,
       passwordHash: null, salt: typeof salt === "string" ? salt : "",
     });
+    await redis.sadd("users:index", id);
     userId = id;
     isNewUser = true;
   }
@@ -100,7 +104,71 @@ async function handleMe(req, res) {
   const redis = getRedis();
   const user = await getJSON(redis, `user:${payload.userId}`);
   if (!user) return res.status(401).json({ error: "Not authenticated" });
-  res.status(200).json({ username: user.username, salt: user.salt });
+  try { await redis.sadd("users:index", user.id); } catch (e) { /* best effort */ }
+  res.status(200).json({ username: user.username, salt: user.salt, email: user.email || null });
+}
+
+async function handleSetEmail(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const payload = verifyAuth(req);
+  if (!payload) return res.status(401).json({ error: "Not authenticated" });
+  const { email } = req.body || {};
+  const clean = String(email || "").trim();
+  if (clean && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) {
+    return res.status(400).json({ error: "That doesn't look like a valid email address." });
+  }
+  const redis = getRedis();
+  const user = await getJSON(redis, `user:${payload.userId}`);
+  if (!user) return res.status(404).json({ error: "Account not found." });
+  user.email = clean || null;
+  await setJSON(redis, `user:${payload.userId}`, user);
+  res.status(200).json({ ok: true, email: user.email });
+}
+
+async function handleRequestReset(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const { username } = req.body || {};
+  const generic = { ok: true, message: "If that account has an email on file, a reset link has been sent." };
+  if (!emailConfigured()) {
+    return res.status(200).json({ ok: false, message: "Password reset by email isn't set up on this deployment (BREVO_API_KEY / EMAIL_FROM not configured)." });
+  }
+  try {
+    const redis = getRedis();
+    const userId = await redis.get(`user:byUsername:${String(username || "").toLowerCase()}`);
+    if (!userId) return res.status(200).json(generic);
+    const user = await getJSON(redis, `user:${userId}`);
+    if (!user || !user.email) return res.status(200).json(generic);
+
+    const token = crypto.randomBytes(24).toString("hex");
+    await redis.set(`reset:${token}`, userId, { ex: 1800 }); // 30 minutes
+    const origin = `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
+    const link = `${origin}/?reset=${token}`;
+    await sendEmail({
+      to: user.email,
+      subject: "Reset your Job Search HQ password",
+      html: `<p>Hi ${user.username},</p><p>Someone (hopefully you) requested a password reset for your Job Search HQ account. This link works for 30 minutes:</p><p><a href="${link}">${link}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
+    });
+    res.status(200).json(generic);
+  } catch (e) {
+    res.status(200).json(generic); // never leak errors that reveal account existence
+  }
+}
+
+async function handleResetPassword(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const { token, newPassword } = req.body || {};
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: "New password must be at least 6 characters." });
+  }
+  const redis = getRedis();
+  const userId = await redis.get(`reset:${String(token || "")}`);
+  if (!userId) return res.status(400).json({ error: "That reset link is invalid or has expired -- request a new one." });
+  const user = await getJSON(redis, `user:${userId}`);
+  if (!user) return res.status(400).json({ error: "Account not found." });
+  user.passwordHash = await bcrypt.hash(newPassword, 10);
+  await setJSON(redis, `user:${userId}`, user);
+  await redis.del(`reset:${String(token)}`);
+  res.status(200).json({ ok: true, message: "Password reset -- you can log in now." });
 }
 
 // Simple per-IP rate limit on credential endpoints: blocks brute-force
@@ -144,9 +212,10 @@ async function handleChangePassword(req, res) {
   // Google-only accounts (passwordHash null) may set a password directly --
   // they've already proven identity via their active session.
 
+  const hadPassword = !!user.passwordHash;
   user.passwordHash = await bcrypt.hash(newPassword, 10);
   await setJSON(redis, `user:${payload.userId}`, user);
-  res.status(200).json({ ok: true, message: user.passwordHash ? "Password updated." : "Password set." });
+  res.status(200).json({ ok: true, message: hadPassword ? "Password updated." : "Password set -- you can now also log in with username + password." });
 }
 
 async function handleDeleteAccount(req, res) {
@@ -171,8 +240,9 @@ async function handleDeleteAccount(req, res) {
     }
   } catch (e) { /* best effort */ }
 
-  const resources = ["jobs", "resume", "interviews", "learning", "profile", "documents"];
+  const resources = ["jobs", "resume", "interviews", "learning", "profile", "documents", "contacts", "todos"];
   for (const r of resources) await redis.del(`blob:${r}:${payload.userId}`);
+  await redis.srem("users:index", payload.userId);
   await redis.del(`user:byUsername:${user.username.toLowerCase()}`);
   if (user.googleId) await redis.del(`user:byGoogleId:${user.googleId}`);
   await redis.del(`user:${payload.userId}`);
@@ -184,7 +254,7 @@ module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "no-store, must-revalidate");
   const { action } = req.query;
   try {
-    if (action === "signup" || action === "login" || action === "google") {
+    if (action === "signup" || action === "login" || action === "google" || action === "request-reset") {
       if (await rateLimited(req)) {
         return res.status(429).json({ error: "Too many attempts -- wait a few minutes and try again." });
       }
@@ -194,6 +264,9 @@ module.exports = async (req, res) => {
     if (action === "google") return await handleGoogle(req, res);
     if (action === "me") return await handleMe(req, res);
     if (action === "change-password") return await handleChangePassword(req, res);
+    if (action === "set-email") return await handleSetEmail(req, res);
+    if (action === "request-reset") return await handleRequestReset(req, res);
+    if (action === "reset-password") return await handleResetPassword(req, res);
     if (action === "delete-account") return await handleDeleteAccount(req, res);
     res.status(404).json({ error: "Unknown auth action" });
   } catch (e) {
