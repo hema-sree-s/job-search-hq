@@ -614,13 +614,36 @@ function UnlockScreen({ username, salt, onUnlocked, onLogout, toast }) {
     }
   };
 
+  const [resetMode, setResetMode] = useState(false);
+
+  const resetData = async () => {
+    if (password.length < 6) { setError("Type the NEW passphrase you want to use (6+ characters) in the box above first."); return; }
+    setBusy(true);
+    setError("");
+    try {
+      const token = getToken();
+      if (!token) { setError("No session -- log out and log in again first."); setBusy(false); return; }
+      const resources = ["jobs", "resume", "interviews", "learning", "profile", "documents"];
+      for (const r of resources) {
+        const res = await fetch(`/api/data/${r}`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
+        if (!res.ok && res.status !== 404) throw new Error(`Couldn't reset ${r} (${res.status})`);
+      }
+      const key = await CRYPTO_HELPERS.deriveKey(password, salt);
+      toast("info", "Data reset. You're starting fresh with your new passphrase.");
+      onUnlocked(key);
+    } catch (err) {
+      setError(err.message || "Reset failed. Try again.");
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="jshq min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
           <Icon name="lock" size={22} className="text-brass mx-auto mb-2" />
           <h1 className="jshq-display text-xl text-paper">Welcome back, {username}</h1>
-          <p className="text-muted text-sm mt-1">Enter your password to unlock your encrypted data on this device.</p>
+          <p className="text-muted text-sm mt-1">Enter your data passphrase to unlock your encrypted data. (For Google accounts, this is the separate passphrase you set on first sign-in -- not your Google password.)</p>
         </div>
         <form onSubmit={submit} className="bg-ink2 border border-hair rounded-lg p-5 space-y-3">
           <div className="flex items-center gap-2 rounded px-3 py-2" style={{ border: "1px solid #E3DCF5", background: "#FFFFFF" }}>
@@ -632,6 +655,19 @@ function UnlockScreen({ username, salt, onUnlocked, onLogout, toast }) {
             {busy && <Icon name="loader" size={15} spin />} Unlock
           </button>
           <button type="button" onClick={onLogout} className="w-full text-xs text-muted hover:text-main text-center">Not you? Log out</button>
+
+          {!resetMode ? (
+            <button type="button" onClick={() => setResetMode(true)} className="w-full text-xs text-muted hover:text-rust text-center pt-1">Forgot your passphrase?</button>
+          ) : (
+            <div className="pt-2 mt-1 border-t border-hair space-y-2">
+              <p className="text-xs text-rust">There's no way to recover data without the original passphrase -- that's what keeps it private from everyone, including the server. Your only option is a fresh start: this permanently erases this account's saved data (pipeline, resume, notes, learning, profile, document list).</p>
+              <p className="text-xs text-muted">To proceed: type the NEW passphrase you want to use in the box above, then click below.</p>
+              <button type="button" onClick={resetData} disabled={busy} className="w-full rounded px-3 py-2 text-xs font-medium focus-ring" style={{ border: "1px solid #F3C9C0", color: "#D97862", background: "transparent" }}>
+                {busy ? "Resetting..." : "Erase my data & start fresh with the passphrase typed above"}
+              </button>
+              <button type="button" onClick={() => setResetMode(false)} className="w-full text-xs text-muted hover:text-main text-center">Never mind</button>
+            </div>
+          )}
         </form>
       </div>
     </div>
