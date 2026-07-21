@@ -135,21 +135,25 @@ async function handleRequestReset(req, res) {
   try {
     const redis = getRedis();
     const userId = await redis.get(`user:byUsername:${String(username || "").toLowerCase()}`);
-    if (!userId) return res.status(200).json(generic);
+    if (!userId) { console.log("[reset-email] no such username"); return res.status(200).json(generic); }
     const user = await getJSON(redis, `user:${userId}`);
-    if (!user || !user.email) return res.status(200).json(generic);
+    if (!user || !user.email) { console.log("[reset-email] account has no email on file"); return res.status(200).json(generic); }
 
     const token = crypto.randomBytes(24).toString("hex");
     await redis.set(`reset:${token}`, userId, { ex: 1800 }); // 30 minutes
     const origin = `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
     const link = `${origin}/?reset=${token}`;
-    await sendEmail({
+    const result = await sendEmail({
       to: user.email,
       subject: "Reset your Job Search HQ password",
       html: `<p>Hi ${user.username},</p><p>Someone (hopefully you) requested a password reset for your Job Search HQ account. This link works for 30 minutes:</p><p><a href="${link}">${link}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
     });
+    // Server-side log only -- the client always gets the generic message, so
+    // this can't be used to probe accounts, but Vercel's logs show the truth.
+    console.log("[reset-email]", result.ok ? `sent to ${user.email}` : `FAILED: ${result.error}`);
     res.status(200).json(generic);
   } catch (e) {
+    console.log("[reset-email] handler error:", e.message);
     res.status(200).json(generic); // never leak errors that reveal account existence
   }
 }
