@@ -478,6 +478,7 @@ function AuthScreen({ onAuthed, onGoogleResult, toast }) {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Google sign-in failed."); setBusy(false); return; }
+      setToken(data.token);
       onGoogleResult(data);
     } catch (err) {
       setError("Couldn't reach the server.");
