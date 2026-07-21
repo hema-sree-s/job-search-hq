@@ -99,9 +99,12 @@ async function extractPdfText(arrayBuffer) {
   }
   return text.trim();
 }
-const getToken = () => localStorage.getItem(TOKEN_KEY);
-const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
-const clearSession = () => localStorage.removeItem(TOKEN_KEY);
+// sessionStorage (not localStorage) on purpose: the login only lasts for the
+// current browser session/tab. Closing the browser ends it, so every new
+// session starts at the login screen. Refreshing within a session stays in.
+const getToken = () => sessionStorage.getItem(TOKEN_KEY);
+const setToken = (t) => sessionStorage.setItem(TOKEN_KEY, t);
+const clearSession = () => sessionStorage.removeItem(TOKEN_KEY);
 
 // Parses a stored blob string back to data. Blobs saved by the old
 // encrypted version of this app can't be read anymore -- they're detected by
