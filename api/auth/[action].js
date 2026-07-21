@@ -104,15 +104,19 @@ async function handleMe(req, res) {
 }
 
 // Simple per-IP rate limit on credential endpoints: blocks brute-force
-// attempts without affecting normal use. 25 attempts per 10 minutes.
+// attempts without affecting normal use. Default: 50 attempts per 10 minutes.
+// Configurable via AUTH_RATE_LIMIT env var; set it to 0 to disable entirely
+// (e.g. temporarily while testing).
 async function rateLimited(req) {
   try {
+    const limit = process.env.AUTH_RATE_LIMIT !== undefined ? parseInt(process.env.AUTH_RATE_LIMIT, 10) : 50;
+    if (!limit || isNaN(limit)) return false; // 0 or invalid = disabled
     const redis = getRedis();
     const ip = String(req.headers["x-forwarded-for"] || "unknown").split(",")[0].trim();
     const key = `rl:auth:${ip}`;
     const count = await redis.incr(key);
     if (count === 1) await redis.expire(key, 600);
-    return count > 25;
+    return count > limit;
   } catch (e) {
     return false; // never let the limiter itself break auth
   }
