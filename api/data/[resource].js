@@ -21,7 +21,10 @@ module.exports = async (req, res) => {
     const key = `blob:${resource}:${payload.userId}`;
 
     if (req.method === "GET") {
-      const blob = await getJSON(redis, key);
+      let blob = await getJSON(redis, key);
+      // The Upstash client auto-deserializes stored JSON strings back into
+      // objects. The API contract is "blob is a string", so re-stringify.
+      if (blob !== null && blob !== undefined && typeof blob !== "string") blob = JSON.stringify(blob);
       return res.status(200).json({ blob: blob || null });
     }
 
@@ -50,7 +53,8 @@ module.exports = async (req, res) => {
             return false;
           } catch (e) { return false; }
         };
-        const prev = await getJSON(redis, key);
+        let prev = await getJSON(redis, key);
+        if (prev !== null && prev !== undefined && typeof prev !== "string") prev = JSON.stringify(prev);
         if (typeof prev === "string" && prev !== blob && isEmptyish(blob) && !isEmptyish(prev)) {
           await redis.set(`backup:${resource}:${payload.userId}`, prev);
         }
