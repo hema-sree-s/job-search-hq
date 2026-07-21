@@ -1926,68 +1926,62 @@ function MainApp({ username, onLogout, toast }) {
 
   useEffect(() => {
     if (!loaded) return;
-    const t = setTimeout(async () => {
+    (async () => {
       try {
         const blob = JSON.stringify(jobs);
         await api("/api/data/jobs", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
-    }, 800);
-    return () => clearTimeout(t);
+    })();
   }, [jobs, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    const t = setTimeout(async () => {
+    (async () => {
       try {
         const blob = JSON.stringify({ text: resumeText, result: resumeResult });
         await api("/api/data/resume", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
-    }, 800);
-    return () => clearTimeout(t);
+    })();
   }, [resumeText, resumeResult, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    const t = setTimeout(async () => {
+    (async () => {
       try {
         const blob = JSON.stringify(interviewData);
         await api("/api/data/interviews", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
-    }, 800);
-    return () => clearTimeout(t);
+    })();
   }, [interviewData, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    const t = setTimeout(async () => {
+    (async () => {
       try {
         const blob = JSON.stringify(learning);
         await api("/api/data/learning", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
-    }, 800);
-    return () => clearTimeout(t);
+    })();
   }, [learning, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    const t = setTimeout(async () => {
+    (async () => {
       try {
         const blob = JSON.stringify(profile);
         await api("/api/data/profile", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
-    }, 800);
-    return () => clearTimeout(t);
+    })();
   }, [profile, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    const t = setTimeout(async () => {
+    (async () => {
       try {
         const blob = JSON.stringify(documents);
         await api("/api/data/documents", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
-    }, 800);
-    return () => clearTimeout(t);
+    })();
   }, [documents, loaded]);
 
   const activeMeta = TABS.find((t) => t.key === activeTab);
