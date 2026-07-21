@@ -31,6 +31,9 @@ optional free Gemini AI features.
    | `ANTHROPIC_API_KEY` | Optional | Paid alternative AI (used instead of Gemini if both set) |
    | `GOOGLE_CLIENT_ID` | Optional | Enables "Continue with Google" — from [Google Cloud Console](https://console.cloud.google.com/apis/credentials) |
    | `GEMINI_MODEL` | Optional | Pin a specific Gemini model; default is the auto-updating `gemini-flash-latest` |
+   | `BREVO_API_KEY` | Optional | **Free** email (password reset + deadline reminders) — key from [brevo.com](https://www.brevo.com) (300 emails/day free) |
+   | `EMAIL_FROM` | Optional | The sender address you verified in Brevo (required with `BREVO_API_KEY`) |
+   | `CRON_SECRET` | Optional | Locks the daily reminder cron endpoint to Vercel's scheduler |
 
    (`UPSTASH_REDIS_REST_URL`/`TOKEN` or `KV_REST_API_URL`/`TOKEN`, and
    `BLOB_READ_WRITE_TOKEN` are added automatically by the storage integrations.)
