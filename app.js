@@ -26,6 +26,9 @@ const ICON_PATHS = {
   user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
   book: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z",
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+  edit: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z",
+  calendar: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
+  download: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3",
 };
 
 function Icon({ name, size = 16, className = "", spin = false }) {
@@ -641,30 +644,37 @@ const STAGES = [
   { key: "rejected", label: "Rejected", num: "05" },
 ];
 
-function AddJobModal({ onClose, onSave }) {
-  const [company, setCompany] = useState("");
-  const [role, setRole] = useState("");
-  const [link, setLink] = useState("");
-  const [notes, setNotes] = useState("");
+function JobModal({ onClose, onSave, initial }) {
+  const editing = !!initial;
+  const [company, setCompany] = useState(initial ? initial.company : "");
+  const [role, setRole] = useState(initial ? initial.role : "");
+  const [link, setLink] = useState(initial ? initial.link || "" : "");
+  const [deadline, setDeadline] = useState(initial ? initial.deadline || "" : "");
+  const [notes, setNotes] = useState(initial ? initial.notes || "" : "");
+  const [jobDesc, setJobDesc] = useState(initial ? initial.jobDesc || "" : "");
   const firstRef = useRef(null);
   useEffect(() => { firstRef.current?.focus(); }, []);
 
   const submit = (e) => {
     if (e) e.preventDefault();
     if (!company.trim() || !role.trim()) return;
-    onSave({
-      id: `job_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      company: company.trim(), role: role.trim(), link: link.trim(), notes: notes.trim(),
-      status: "saved", dateAdded: new Date().toISOString().slice(0, 10),
-    });
+    if (editing) {
+      onSave({ ...initial, company: company.trim(), role: role.trim(), link: link.trim(), deadline, notes: notes.trim(), jobDesc: jobDesc.trim() });
+    } else {
+      onSave({
+        id: `job_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        company: company.trim(), role: role.trim(), link: link.trim(), deadline, notes: notes.trim(), jobDesc: jobDesc.trim(),
+        status: "saved", dateAdded: new Date().toISOString().slice(0, 10),
+      });
+    }
     onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(61,55,82,0.35)" }} onClick={onClose}>
-      <form onSubmit={submit} className="fade-in bg-ink2 border border-hair rounded-lg w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+      <form onSubmit={submit} className="fade-in bg-ink2 border border-hair rounded-lg w-full max-w-md p-5 max-h-full overflow-y-auto scrollbar-thin" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="jshq-display text-lg text-paper">New application</h3>
+          <h3 className="jshq-display text-lg text-paper">{editing ? "Edit application" : "New application"}</h3>
           <button type="button" className="text-muted hover:text-main focus-ring rounded" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
         </div>
         <div className="space-y-3">
@@ -676,25 +686,52 @@ function AddJobModal({ onClose, onSave }) {
             <label className="text-xs text-muted jshq-mono uppercase tracking-wide">Role</label>
             <input value={role} onChange={(e) => setRole(e.target.value)} className="w-full mt-1 rounded px-3 py-2 text-sm focus-ring" placeholder="Product Manager" />
           </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-xs text-muted jshq-mono uppercase tracking-wide">Job link (optional)</label>
+              <input value={link} onChange={(e) => setLink(e.target.value)} className="w-full mt-1 rounded px-3 py-2 text-sm focus-ring" placeholder="https://..." />
+            </div>
+            <div>
+              <label className="text-xs text-muted jshq-mono uppercase tracking-wide">Deadline</label>
+              <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="w-full mt-1 rounded px-3 py-2 text-sm focus-ring" />
+            </div>
+          </div>
           <div>
-            <label className="text-xs text-muted jshq-mono uppercase tracking-wide">Job link (optional)</label>
-            <input value={link} onChange={(e) => setLink(e.target.value)} className="w-full mt-1 rounded px-3 py-2 text-sm focus-ring" placeholder="https://..." />
+            <label className="text-xs text-muted jshq-mono uppercase tracking-wide">Job description (optional)</label>
+            <textarea value={jobDesc} onChange={(e) => setJobDesc(e.target.value)} rows={4} className="w-full mt-1 rounded px-3 py-2 text-sm focus-ring resize-none scrollbar-thin" placeholder="Paste the job description here to enable one-click match analysis from the card..." />
           </div>
           <div>
             <label className="text-xs text-muted jshq-mono uppercase tracking-wide">Notes (optional)</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="w-full mt-1 rounded px-3 py-2 text-sm focus-ring resize-none" placeholder="Referred by...; salary range; recruiter name..." />
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full mt-1 rounded px-3 py-2 text-sm focus-ring resize-none" placeholder="Referred by...; salary range; recruiter name..." />
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button type="button" className="btn-ghost rounded px-4 py-2 text-sm focus-ring" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn-primary rounded px-4 py-2 text-sm font-medium focus-ring" disabled={!company.trim() || !role.trim()}>Add application</button>
+          <button type="submit" className="btn-primary rounded px-4 py-2 text-sm font-medium focus-ring" disabled={!company.trim() || !role.trim()}>{editing ? "Save changes" : "Add application"}</button>
         </div>
       </form>
     </div>
   );
 }
 
-function JobCard({ job, onStatusChange, onDelete, onDragStart, onDragEnd, dragging }) {
+function deadlineInfo(deadline) {
+  if (!deadline) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(deadline + "T00:00:00");
+  const days = Math.round((d - today) / 86400000);
+  if (days < 0) return { label: `Overdue ${-days}d`, tone: "overdue", days };
+  if (days === 0) return { label: "Due today", tone: "soon", days };
+  if (days <= 7) return { label: `Due in ${days}d`, tone: "soon", days };
+  return { label: `Due ${deadline}`, tone: "ok", days };
+}
+
+function JobCard({ job, onStatusChange, onDelete, onEdit, onMatch, onDragStart, onDragEnd, dragging }) {
+  const dl = deadlineInfo(job.deadline);
+  const dlStyle = dl && (dl.tone === "overdue"
+    ? { background: "#FBE3DE", color: "#C25A44", border: "1px solid #F3C9C0" }
+    : dl.tone === "soon"
+      ? { background: "#F7EDD8", color: "#A87F2D", border: "1px solid #EBD9B4" }
+      : { background: "#EFE7FC", color: "#6E5BA6", border: "1px solid #D9CDF2" });
   return (
     <div className={`job-card rounded-md p-3 mb-3 ${dragging ? "dragging" : ""}`} draggable
       onDragStart={(e) => { e.dataTransfer.setData("text/plain", job.id); onDragStart(job.id); }} onDragEnd={onDragEnd}>
@@ -704,12 +741,17 @@ function JobCard({ job, onStatusChange, onDelete, onDragStart, onDragEnd, draggi
           <p className="font-semibold text-sm leading-tight truncate">{job.role}</p>
           <p className="text-xs opacity-70 mt-0.5 truncate">{job.company}</p>
         </div>
+        <button onClick={() => onEdit(job)} className="opacity-40 hover:opacity-100 shrink-0" aria-label="Edit application"><Icon name="edit" size={13} /></button>
         <button onClick={() => onDelete(job.id)} className="opacity-40 hover:opacity-100 hover:text-rust shrink-0" aria-label="Delete application"><Icon name="trash" size={14} /></button>
       </div>
+      {dl && <span className="inline-block rounded-full mt-2 jshq-mono" style={{ ...dlStyle, fontSize: 10, padding: "2px 8px" }}>{dl.label}</span>}
       {job.notes && <p className="text-xs mt-2 opacity-70 line-clamp-2">{job.notes}</p>}
       <div className="flex items-center justify-between mt-3">
         <span className="jshq-mono opacity-50" style={{ fontSize: 10 }}>{job.dateAdded}</span>
-        {job.link && <a href={job.link} target="_blank" rel="noreferrer" className="opacity-50 hover:opacity-100" aria-label="Open job link"><Icon name="external" size={12} /></a>}
+        <span className="flex items-center gap-2">
+          {job.jobDesc && <button onClick={() => onMatch(job)} className="opacity-60 hover:opacity-100 text-xs font-medium flex items-center gap-1" title="Analyze match against your resume"><Icon name="target" size={12} /> Match</button>}
+          {job.link && <a href={job.link} target="_blank" rel="noreferrer" className="opacity-50 hover:opacity-100" aria-label="Open job link"><Icon name="external" size={12} /></a>}
+        </span>
       </div>
       <select value={job.status} onChange={(e) => onStatusChange(job.id, e.target.value)} className="w-full mt-2 rounded text-xs py-1.5 px-2 jshq-mono focus-ring" style={{ background: "#EFE7FC", color: "#3D3752", border: "1px solid #D9CDF2" }}>
         {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -718,12 +760,15 @@ function JobCard({ job, onStatusChange, onDelete, onDragStart, onDragEnd, draggi
   );
 }
 
-function TrackerTab({ jobs, setJobs, toast }) {
+function TrackerTab({ jobs, setJobs, onMatchJob, toast }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [editingJob, setEditingJob] = useState(null);
+  const [search, setSearch] = useState("");
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
 
   const addJob = (job) => { setJobs((prev) => [job, ...prev]); toast("success", `Added ${job.role} at ${job.company}`); };
+  const updateJob = (job) => { setJobs((prev) => prev.map((j) => (j.id === job.id ? job : j))); toast("success", "Application updated"); };
   const deleteJob = (id) => {
     const job = jobs.find((j) => j.id === id);
     setJobs((prev) => prev.filter((j) => j.id !== id));
@@ -731,6 +776,18 @@ function TrackerTab({ jobs, setJobs, toast }) {
   };
   const changeStatus = (id, status) => setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, status } : j)));
   const handleDrop = (stageKey) => { if (draggingId) changeStatus(draggingId, stageKey); setDragOverStage(null); setDraggingId(null); };
+
+  const q = search.trim().toLowerCase();
+  const visibleJobs = q
+    ? jobs.filter((j) => [j.company, j.role, j.notes, j.link].some((f) => (f || "").toLowerCase().includes(q)))
+    : jobs;
+
+  // Upcoming/overdue deadlines on still-active applications
+  const reminders = jobs
+    .filter((j) => j.deadline && j.status !== "rejected" && j.status !== "offer")
+    .map((j) => ({ job: j, dl: deadlineInfo(j.deadline) }))
+    .filter((r) => r.dl && r.dl.days <= 7)
+    .sort((a, b) => a.dl.days - b.dl.days);
 
   const total = jobs.length;
   const applied = jobs.filter((j) => j.status !== "saved").length;
@@ -744,8 +801,28 @@ function TrackerTab({ jobs, setJobs, toast }) {
           <h2 className="jshq-display text-xl text-paper">Application pipeline</h2>
           <p className="text-muted text-sm mt-0.5">Drag cards between stages, or use the dropdown on each one.</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="btn-primary rounded px-4 py-2 text-sm font-medium flex items-center gap-1.5 focus-ring"><Icon name="plus" size={16} /> Add application</button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 rounded px-3 py-2" style={{ border: "1px solid #E3DCF5", background: "#FFFFFF" }}>
+            <Icon name="search" size={14} className="text-muted" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} className="bg-transparent text-sm p-0 w-40" style={{ border: "none", background: "transparent" }} placeholder="Search cards..." />
+            {search && <button onClick={() => setSearch("")} className="text-muted hover:text-main"><Icon name="x" size={13} /></button>}
+          </div>
+          <button onClick={() => setShowAdd(true)} className="btn-primary rounded px-4 py-2 text-sm font-medium flex items-center gap-1.5 focus-ring"><Icon name="plus" size={16} /> Add application</button>
+        </div>
       </div>
+
+      {reminders.length > 0 && (
+        <div className="rounded-lg p-3.5 mb-5" style={{ background: "#FDF6EA", border: "1px solid #EBD9B4" }}>
+          <p className="text-xs font-medium mb-1.5 flex items-center gap-1.5" style={{ color: "#A87F2D" }}><Icon name="calendar" size={13} /> Deadlines coming up</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {reminders.map(({ job, dl }) => (
+              <button key={job.id} onClick={() => setEditingJob(job)} className="text-xs hover:underline" style={{ color: dl.tone === "overdue" ? "#C25A44" : "#8A6A24" }}>
+                {job.role} at {job.company} -- {dl.label.toLowerCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <StatCard iconName="layers" label="Total applications" value={total} tone="brass" />
@@ -756,7 +833,7 @@ function TrackerTab({ jobs, setJobs, toast }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {STAGES.map((stage) => {
-          const stageJobs = jobs.filter((j) => j.status === stage.key);
+          const stageJobs = visibleJobs.filter((j) => j.status === stage.key);
           return (
             <div key={stage.key} className={`stage-col bg-ink2 rounded-lg p-3 border border-hair ${dragOverStage === stage.key ? "drag-over" : ""}`} style={{ minHeight: 140 }}
               onDragOver={(e) => { e.preventDefault(); setDragOverStage(stage.key); }}
@@ -769,14 +846,15 @@ function TrackerTab({ jobs, setJobs, toast }) {
               </div>
               {stageJobs.length === 0 ? <p className="text-xs text-muted italic py-4 text-center">Drop a card here</p> :
                 stageJobs.map((job) => (
-                  <JobCard key={job.id} job={job} onStatusChange={changeStatus} onDelete={deleteJob}
+                  <JobCard key={job.id} job={job} onStatusChange={changeStatus} onDelete={deleteJob} onEdit={setEditingJob} onMatch={onMatchJob}
                     onDragStart={setDraggingId} onDragEnd={() => { setDraggingId(null); setDragOverStage(null); }} dragging={draggingId === job.id} />
                 ))}
             </div>
           );
         })}
       </div>
-      {showAdd && <AddJobModal onClose={() => setShowAdd(false)} onSave={addJob} />}
+      {showAdd && <JobModal onClose={() => setShowAdd(false)} onSave={addJob} />}
+      {editingJob && <JobModal initial={editingJob} onClose={() => setEditingJob(null)} onSave={updateJob} />}
     </div>
   );
 }
@@ -881,12 +959,23 @@ function ResumeScannerTab({ resumeText, setResumeText, resumeResult, setResumeRe
 }
 
 /* ============================== MATCH ANALYZER TAB ============================== */
-function MatchAnalyzerTab({ resumeText, setResumeText, toast }) {
+function MatchAnalyzerTab({ resumeText, setResumeText, prefill, toast }) {
   const [jobDesc, setJobDesc] = useState("");
   const [result, setResult] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [ai, setAi] = useState({ status: "idle", data: null, error: null });
+
+  // When a pipeline card's "Match" button sends its job description here,
+  // load it in and run the local analysis immediately.
+  useEffect(() => {
+    if (prefill && prefill.jobDesc) {
+      setJobDesc(prefill.jobDesc);
+      setResult(computeMatch(prefill.jobDesc, resumeText));
+      setAttempted(true);
+      setAi({ status: "idle", data: null, error: null });
+    }
+  }, [prefill]);
 
   const analyze = () => {
     if (!jobDesc.trim()) return;
@@ -1277,7 +1366,109 @@ function fmtBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profile, setProfile, documents, setDocuments, toast }) {
+function AccountSection({ username, jobs, resumeText, resumeResult, interviewData, learning, profile, documents, onLogout, toast }) {
+  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
+  const [pwBusy, setPwBusy] = useState(false);
+  const [delConfirm, setDelConfirm] = useState("");
+  const [delBusy, setDelBusy] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+
+  const changePassword = async (e) => {
+    e.preventDefault();
+    if (pwForm.next.length < 6) { toast("error", "New password must be at least 6 characters."); return; }
+    if (pwForm.next !== pwForm.confirm) { toast("error", "New passwords don't match."); return; }
+    setPwBusy(true);
+    try {
+      const res = await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword: pwForm.current, newPassword: pwForm.next }) });
+      const data = await res.json();
+      if (!res.ok) { toast("error", data.error || "Couldn't change password."); }
+      else { toast("success", data.message || "Password updated."); setPwForm({ current: "", next: "", confirm: "" }); }
+    } catch (err) {
+      toast("error", "Couldn't reach the server.");
+    }
+    setPwBusy(false);
+  };
+
+  const download = (filename, text, type) => {
+    const blobUrl = URL.createObjectURL(new Blob([text], { type }));
+    const a = document.createElement("a");
+    a.href = blobUrl; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+  };
+
+  const exportJSON = () => {
+    const data = { exportedAt: new Date().toISOString(), username, jobs, resume: { text: resumeText, result: resumeResult }, interviews: interviewData, learning, profile, documents };
+    download(`job-search-hq-export-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), "application/json");
+    toast("success", "Exported all data as JSON.");
+  };
+
+  const exportCSV = () => {
+    const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = [["Company", "Role", "Status", "Date added", "Deadline", "Link", "Notes"].join(",")];
+    for (const j of jobs) rows.push([j.company, j.role, j.status, j.dateAdded, j.deadline || "", j.link || "", j.notes || ""].map(esc).join(","));
+    download(`applications-${new Date().toISOString().slice(0, 10)}.csv`, rows.join("\n"), "text/csv");
+    toast("success", "Exported applications as CSV.");
+  };
+
+  const deleteAccount = async () => {
+    if (delConfirm !== username) { toast("error", "Type your username exactly to confirm."); return; }
+    setDelBusy(true);
+    try {
+      const res = await api("/api/auth/delete-account", { method: "POST", body: JSON.stringify({ confirm: delConfirm }) });
+      const data = await res.json();
+      if (!res.ok) { toast("error", data.error || "Couldn't delete the account."); setDelBusy(false); return; }
+      clearSession();
+      window.location.reload();
+    } catch (err) {
+      toast("error", "Couldn't reach the server.");
+      setDelBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-ink2 border border-hair rounded-lg p-5 space-y-5">
+      <p className="text-sm font-medium text-paper flex items-center gap-1.5"><Icon name="user" size={15} className="text-brass" /> Account</p>
+
+      <div>
+        <p className="text-xs text-muted jshq-mono uppercase tracking-wide mb-2">Change password</p>
+        <form onSubmit={changePassword} className="flex flex-wrap gap-2 items-end">
+          <input type="password" value={pwForm.current} onChange={(e) => setPwForm((f) => ({ ...f, current: e.target.value }))} className="flex-1 min-w-36 rounded px-3 py-2 text-sm focus-ring" placeholder="Current password (blank if Google-only)" />
+          <input type="password" value={pwForm.next} onChange={(e) => setPwForm((f) => ({ ...f, next: e.target.value }))} className="flex-1 min-w-32 rounded px-3 py-2 text-sm focus-ring" placeholder="New password" />
+          <input type="password" value={pwForm.confirm} onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))} className="flex-1 min-w-32 rounded px-3 py-2 text-sm focus-ring" placeholder="Confirm new" />
+          <button type="submit" disabled={pwBusy || !pwForm.next || !pwForm.confirm} className="btn-primary rounded px-4 py-2 text-sm font-medium focus-ring">{pwBusy ? "Saving..." : "Update"}</button>
+        </form>
+        <p className="text-xs text-muted mt-1.5">Google sign-in accounts can set a password here (leave "current" blank) to also enable username login. There's no email-based reset -- if a password is forgotten while logged out, the account can't be recovered.</p>
+      </div>
+
+      <div className="pt-4 border-t border-hair">
+        <p className="text-xs text-muted jshq-mono uppercase tracking-wide mb-2">Export my data</p>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={exportJSON} className="btn-ghost rounded px-3 py-2 text-sm focus-ring flex items-center gap-1.5"><Icon name="download" size={14} /> Everything (JSON)</button>
+          <button onClick={exportCSV} className="btn-ghost rounded px-3 py-2 text-sm focus-ring flex items-center gap-1.5"><Icon name="download" size={14} /> Applications (CSV)</button>
+        </div>
+      </div>
+
+      <div className="pt-4 border-t border-hair">
+        <p className="text-xs jshq-mono uppercase tracking-wide mb-2 text-rust">Danger zone</p>
+        {!showDelete ? (
+          <button onClick={() => setShowDelete(true)} className="rounded px-3 py-2 text-sm focus-ring" style={{ border: "1px solid #F3C9C0", color: "#D97862" }}>Delete my account...</button>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-rust">This permanently deletes your account, all saved data, and uploaded files. It cannot be undone. Consider exporting first.</p>
+            <div className="flex flex-wrap gap-2">
+              <input value={delConfirm} onChange={(e) => setDelConfirm(e.target.value)} className="flex-1 min-w-40 rounded px-3 py-2 text-sm focus-ring" placeholder={`Type "${username}" to confirm`} />
+              <button onClick={deleteAccount} disabled={delBusy || delConfirm !== username} className="rounded px-3 py-2 text-sm font-medium focus-ring" style={{ background: delConfirm === username ? "#D97862" : "#F3C9C0", color: "#FFFFFF" }}>{delBusy ? "Deleting..." : "Delete forever"}</button>
+              <button onClick={() => { setShowDelete(false); setDelConfirm(""); }} className="btn-ghost rounded px-3 py-2 text-sm focus-ring">Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProfileTab({ username, jobs, resumeText, resumeResult, interviewData, learning, profile, setProfile, documents, setDocuments, onLogout, toast }) {
   const [editing, setEditing] = useState(false);
   const [headline, setHeadline] = useState(profile.headline);
   const [bio, setBio] = useState(profile.bio);
@@ -1653,6 +1844,8 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
           </div>
         )}
       </div>
+
+      <AccountSection username={username} jobs={jobs} resumeText={resumeText} resumeResult={resumeResult} interviewData={interviewData} learning={learning} profile={profile} documents={documents} onLogout={onLogout} toast={toast} />
     </div>
   );
 }
@@ -1680,6 +1873,12 @@ function MainApp({ username, onLogout, toast }) {
   const [learning, setLearning] = useState(DEFAULT_LEARNING);
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
   const [documents, setDocuments] = useState([]);
+  const [matchPrefill, setMatchPrefill] = useState(null);
+
+  const handleMatchJob = (job) => {
+    setMatchPrefill({ jobDesc: job.jobDesc, at: Date.now() });
+    setActiveTab("match");
+  };
 
   useEffect(() => {
     (async () => {
@@ -1826,11 +2025,11 @@ function MainApp({ username, onLogout, toast }) {
           <div className="space-y-3"><div className="skeleton h-8" style={{ width: "33%" }} /><div className="skeleton h-24 w-full" /><div className="skeleton h-24 w-full" /></div>
         ) : (
           <div key={activeTab} className="fade-in">
-            {activeTab === "tracker" && <TrackerTab jobs={jobs} setJobs={setJobs} toast={toast} />}
+            {activeTab === "tracker" && <TrackerTab jobs={jobs} setJobs={setJobs} onMatchJob={handleMatchJob} toast={toast} />}
             {activeTab === "scanner" && <ResumeScannerTab resumeText={resumeText} setResumeText={setResumeText} resumeResult={resumeResult} setResumeResult={setResumeResult} toast={toast} />}
-            {activeTab === "match" && <MatchAnalyzerTab resumeText={resumeText} setResumeText={setResumeText} toast={toast} />}
+            {activeTab === "match" && <MatchAnalyzerTab resumeText={resumeText} setResumeText={setResumeText} prefill={matchPrefill} toast={toast} />}
             {activeTab === "prep" && <InterviewPrepSection jobs={jobs} interviewData={interviewData} setInterviewData={setInterviewData} learning={learning} setLearning={setLearning} toast={toast} />}
-            {activeTab === "profile" && <ProfileTab username={username} jobs={jobs} resumeText={resumeText} resumeResult={resumeResult} learning={learning} profile={profile} setProfile={setProfile} documents={documents} setDocuments={setDocuments} toast={toast} />}
+            {activeTab === "profile" && <ProfileTab username={username} jobs={jobs} resumeText={resumeText} resumeResult={resumeResult} interviewData={interviewData} learning={learning} profile={profile} setProfile={setProfile} documents={documents} setDocuments={setDocuments} onLogout={onLogout} toast={toast} />}
           </div>
         )}
       </main>
