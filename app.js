@@ -1880,12 +1880,22 @@ function MainApp({ username, onLogout, toast }) {
     setActiveTab("match");
   };
 
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+
   useEffect(() => {
     (async () => {
+      setLoadError(false);
       try {
-        const [jobsRes, resumeRes, interviewsRes, learningRes, profileRes, documentsRes] = await Promise.all([
+        const responses = await Promise.all([
           api("/api/data/jobs"), api("/api/data/resume"), api("/api/data/interviews"), api("/api/data/learning"), api("/api/data/profile"), api("/api/data/documents"),
         ]);
+        // CRITICAL: if ANY response isn't a clean 200 (e.g. the deployment is
+        // mid-rollout right after a code push), abort WITHOUT marking loaded.
+        // If we marked loaded anyway, the auto-save effects below would
+        // immediately overwrite the server's real data with empty state.
+        if (responses.some((r) => !r.ok)) throw new Error("One or more data requests failed");
+        const [jobsRes, resumeRes, interviewsRes, learningRes, profileRes, documentsRes] = responses;
         const jobsBlob = (await jobsRes.json()).blob;
         const resumeBlob = (await resumeRes.json()).blob;
         const interviewsBlob = (await interviewsRes.json()).blob;
@@ -1907,12 +1917,12 @@ function MainApp({ username, onLogout, toast }) {
         setLearning({ ...DEFAULT_LEARNING, ...(learningData || {}) });
         setProfile({ ...DEFAULT_PROFILE, ...(profileData || {}) });
         setDocuments(documentsData || []);
+        setLoaded(true); // saves are only ever enabled after a fully successful load
       } catch (e) {
-        toast("error", "Couldn't load your saved data.");
+        setLoadError(true); // loaded stays false -> nothing can overwrite server data
       }
-      setLoaded(true);
     })();
-  }, []);
+  }, [loadAttempt]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -1975,6 +1985,26 @@ function MainApp({ username, onLogout, toast }) {
   }, [documents, loaded]);
 
   const activeMeta = TABS.find((t) => t.key === activeTab);
+
+  if (loadError) {
+    return (
+      <div className="jshq min-h-screen flex items-center justify-center p-4">
+        <div className="text-center max-w-sm">
+          <Icon name="info" size={24} className="text-rust mx-auto mb-3" />
+          <h2 className="jshq-display text-lg text-paper">Couldn't load your data</h2>
+          <p className="text-muted text-sm mt-1 mb-4">This usually happens for a minute right after a new deployment. Your saved data is untouched -- nothing is written until loading succeeds.</p>
+          <div className="flex justify-center gap-2">
+            <button onClick={() => setLoadAttempt((n) => n + 1)} className="btn-primary rounded px-4 py-2 text-sm font-medium focus-ring">Retry</button>
+            <button onClick={onLogout} className="btn-ghost rounded px-4 py-2 text-sm focus-ring">Log out</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!loaded) {
+    return <div className="jshq min-h-screen flex items-center justify-center"><Icon name="loader" size={20} spin /></div>;
+  }
 
   return (
     <div className="jshq min-h-screen w-full flex flex-col sm:flex-row">
