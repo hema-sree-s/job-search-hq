@@ -61,44 +61,8 @@ function b64ToBuf(b64) {
   return bytes;
 }
 
-const CRYPTO_HELPERS = {
-  randomSaltB64() {
-    return bufToB64(crypto.getRandomValues(new Uint8Array(16)));
-  },
-  async deriveKey(password, saltB64) {
-    const enc = new TextEncoder();
-    const salt = b64ToBuf(saltB64);
-    const baseKey = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
-    return crypto.subtle.deriveKey(
-      { name: "PBKDF2", salt, iterations: CRYPTO_ITERATIONS, hash: "SHA-256" },
-      baseKey,
-      { name: "AES-GCM", length: 256 },
-      false,
-      ["encrypt", "decrypt"]
-    );
-  },
-  async encryptJSON(key, obj) {
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const enc = new TextEncoder();
-    const data = enc.encode(JSON.stringify(obj));
-    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data);
-    return JSON.stringify({ iv: bufToB64(iv), data: bufToB64(ciphertext) });
-  },
-  async decryptJSON(key, blob) {
-    if (!blob) return null;
-    const { iv, data } = JSON.parse(blob);
-    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64ToBuf(iv) }, key, b64ToBuf(data));
-    return JSON.parse(new TextDecoder().decode(plain));
-  },
-  async encryptBytes(key, arrayBuffer) {
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, arrayBuffer);
-    return { ivB64: bufToB64(iv), dataB64: bufToB64(ciphertext) };
-  },
-  async decryptBytes(key, ivB64, dataB64) {
-    return crypto.subtle.decrypt({ name: "AES-GCM", iv: b64ToBuf(ivB64) }, key, b64ToBuf(dataB64));
-  },
-};
+// (Client-side encryption was removed by request -- data is protected by
+// account auth on the server instead.)
 
 /* ============================== API CLIENT ============================== */
 const TOKEN_KEY = "jshq_token";
@@ -116,13 +80,42 @@ async function extractPdfText(arrayBuffer) {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    text += content.items.map((it) => it.str).join(" ") + "\n";
+    // Rebuild real line breaks from each text item's Y position on the page,
+    // so bullets/sections survive extraction (important for scoring + autofill).
+    const lines = [];
+    let line = [];
+    let lastY = null;
+    for (const it of content.items) {
+      const y = Math.round((it.transform && it.transform[5]) || 0);
+      if (lastY !== null && Math.abs(y - lastY) > 2 && line.length) {
+        lines.push(line.join(" "));
+        line = [];
+      }
+      if (it.str && it.str.trim()) line.push(it.str.trim());
+      lastY = y;
+    }
+    if (line.length) lines.push(line.join(" "));
+    text += lines.join("\n") + "\n";
   }
   return text.trim();
 }
 const getToken = () => localStorage.getItem(TOKEN_KEY);
 const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
 const clearSession = () => localStorage.removeItem(TOKEN_KEY);
+
+// Parses a stored blob string back to data. Blobs saved by the old
+// encrypted version of this app can't be read anymore -- they're detected by
+// shape and treated as empty so the app starts cleanly instead of crashing.
+function parseBlob(blob, fallback) {
+  if (!blob || typeof blob !== "string") return fallback;
+  try {
+    const v = JSON.parse(blob);
+    if (v && typeof v === "object" && typeof v.iv === "string" && typeof v.data === "string") return fallback;
+    return v === null || v === undefined ? fallback : v;
+  } catch (e) {
+    return fallback;
+  }
+}
 
 async function api(path, opts = {}) {
   const token = getToken();
@@ -174,11 +167,15 @@ function guessProfileFromResume(text) {
   // Headline: the first short, name/title-like line near the top that isn't
   // contact info (email/phone/address-heavy).
   let headline = "";
-  for (const line of lines.slice(0, 6)) {
-    if (line.length > 3 && line.length <= 70 && !/[@]/.test(line) && !/\d{3}.*\d{4}/.test(line)) {
-      const wordCount = line.split(/\s+/).length;
-      if (wordCount >= 2 && wordCount <= 8) { headline = line; break; }
-    }
+  for (const rawLine of lines.slice(0, 8)) {
+    // Take the part before any "|" (contact separators), skip all-caps lines
+    // (usually the person's name) and anything with emails/phones.
+    const cand = rawLine.split("|")[0].trim();
+    if (!cand || cand.length < 4 || cand.length > 70) continue;
+    if (/[@]/.test(cand) || /\d{3}.*\d{4}/.test(cand)) continue;
+    if (cand === cand.toUpperCase() && /[A-Z]{3}/.test(cand)) continue;
+    const wc = cand.split(/\s+/).length;
+    if (wc >= 2 && wc <= 8) { headline = cand; break; }
   }
 
   // Bio: text following a Summary/Objective/Profile heading, up to the next
@@ -205,7 +202,14 @@ function analyzeResume(text) {
   const words = clean.split(/\s+/).filter(Boolean);
   const wordCount = words.length;
   const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
-  const bulletLines = lines.filter((l) => /^[-•*▪◦]|^\d+[.)]/.test(l));
+  let bulletLines = lines.filter((l) => /^[-•*▪◦]|^\d+[.)]/.test(l));
+  // Fallback: some resumes (or PDF extractions) keep bullets inline on one
+  // line -- treat text between bullet characters as individual bullets.
+  if (bulletLines.length < 3) {
+    const inline = clean.split(/[•▪◦]/).slice(1).map((s) => s.trim())
+      .filter((s) => { const w = s.split(/\s+/).length; return w >= 3 && w <= 60; });
+    if (inline.length >= 3) bulletLines = inline;
+  }
   const hasEmail = /[\w.+-]+@[\w-]+\.[\w-]+/.test(clean);
   const hasPhone = /(\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4})/.test(clean);
   const sections = {
@@ -435,7 +439,6 @@ function AuthScreen({ onAuthed, onGoogleResult, toast }) {
     setBusy(true);
     try {
       const body = { username: username.trim(), password };
-      if (mode === "signup") body.salt = CRYPTO_HELPERS.randomSaltB64();
 
       const res = await fetch(`/api/auth/${mode}`, {
         method: "POST",
@@ -445,10 +448,9 @@ function AuthScreen({ onAuthed, onGoogleResult, toast }) {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Something went wrong."); setBusy(false); return; }
 
-      const key = await CRYPTO_HELPERS.deriveKey(password, data.salt);
       setToken(data.token);
       toast("success", mode === "signup" ? `Welcome, ${data.username}!` : `Welcome back, ${data.username}!`);
-      onAuthed(data.username, key);
+      onAuthed(data.username);
     } catch (err) {
       setError("Couldn't reach the server. Is it deployed and configured?");
       setBusy(false);
@@ -474,7 +476,7 @@ function AuthScreen({ onAuthed, onGoogleResult, toast }) {
       const res = await fetch("/api/auth/google", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential: response.credential, salt: CRYPTO_HELPERS.randomSaltB64() }),
+        body: JSON.stringify({ credential: response.credential }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Google sign-in failed."); setBusy(false); return; }
@@ -496,9 +498,9 @@ function AuthScreen({ onAuthed, onGoogleResult, toast }) {
     <div className="jshq min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
-          <p className="jshq-mono text-brass text-xs tracking-widest">MULTI-USER · END-TO-END ENCRYPTED</p>
+          <p className="jshq-mono text-brass text-xs tracking-widest">YOUR JOB SEARCH COMMAND CENTER</p>
           <h1 className="jshq-display text-2xl text-paper mt-1">Job Search HQ</h1>
-          <p className="text-muted text-sm mt-1">Your data is encrypted in your browser with your password -- even the server can't read it.</p>
+          <p className="text-muted text-sm mt-1">Your entire job search -- pipeline, resume tools, interview prep, and learning -- in one private account.</p>
         </div>
         {googleClientId && (
           <div className="mb-3">
@@ -538,184 +540,6 @@ function AuthScreen({ onAuthed, onGoogleResult, toast }) {
           <button type="submit" disabled={busy || !username.trim() || !password} className="btn-primary w-full rounded px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 focus-ring">
             {busy && <Icon name="loader" size={15} spin />}
             {mode === "login" ? "Log in" : "Create account"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-/* ============================== UNLOCK SCREEN (returning visitor) ============================== */
-function UnlockScreen({ username, salt, onUnlocked, onLogout, toast }) {
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setError("");
-    if (!password) return;
-    setBusy(true);
-    try {
-      const key = await CRYPTO_HELPERS.deriveKey(password, salt);
-
-      // Deliberately NOT using the api() helper here: we want full control to
-      // report the exact failure instead of auto-clearing the session.
-      const token = getToken();
-      if (!token) {
-        setError("No session token exists in this browser right now (it was cleared or never saved). Click 'Log out' below and log in again.");
-        setBusy(false);
-        return;
-      }
-
-      let res;
-      try {
-        res = await fetch("/api/data/jobs", { headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" } });
-      } catch (networkErr) {
-        setError("The request could not reach the server at all (network-level failure).");
-        setBusy(false);
-        return;
-      }
-
-      if (res.status === 401) {
-        let body = null;
-        try { body = await res.json(); } catch (e2) { /* ignore */ }
-        setError(`The server rejected the session: ${body && body.reason ? body.reason : "no reason given"}. Click 'Log out' below and log in again.`);
-        setBusy(false);
-        return;
-      }
-      if (!res.ok) {
-        setError(`Server error (${res.status}) while checking your passphrase.`);
-        setBusy(false);
-        return;
-      }
-
-      let blob;
-      try {
-        ({ blob } = await res.json());
-      } catch (parseErr) {
-        setError("Unexpected response from the server -- the deployment may be out of date.");
-        setBusy(false);
-        return;
-      }
-      if (blob) {
-        try {
-          await CRYPTO_HELPERS.decryptJSON(key, blob);
-        } catch (decryptErr) {
-          setError("Incorrect passphrase.");
-          setBusy(false);
-          return;
-        }
-      }
-      onUnlocked(key);
-    } catch (err) {
-      setError("Something went wrong unlocking your data.");
-      setBusy(false);
-    }
-  };
-
-  const [resetMode, setResetMode] = useState(false);
-
-  const resetData = async () => {
-    if (password.length < 6) { setError("Type the NEW passphrase you want to use (6+ characters) in the box above first."); return; }
-    setBusy(true);
-    setError("");
-    try {
-      const token = getToken();
-      if (!token) { setError("No session -- log out and log in again first."); setBusy(false); return; }
-      const resources = ["jobs", "resume", "interviews", "learning", "profile", "documents"];
-      for (const r of resources) {
-        const res = await fetch(`/api/data/${r}`, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
-        if (!res.ok && res.status !== 404) throw new Error(`Couldn't reset ${r} (${res.status})`);
-      }
-      const key = await CRYPTO_HELPERS.deriveKey(password, salt);
-      toast("info", "Data reset. You're starting fresh with your new passphrase.");
-      onUnlocked(key);
-    } catch (err) {
-      setError(err.message || "Reset failed. Try again.");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="jshq min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-6">
-          <Icon name="lock" size={22} className="text-brass mx-auto mb-2" />
-          <h1 className="jshq-display text-xl text-paper">Welcome back, {username}</h1>
-          <p className="text-muted text-sm mt-1">Enter your data passphrase to unlock your encrypted data. (For Google accounts, this is the separate passphrase you set on first sign-in -- not your Google password.)</p>
-        </div>
-        <form onSubmit={submit} className="bg-ink2 border border-hair rounded-lg p-5 space-y-3">
-          <div className="flex items-center gap-2 rounded px-3 py-2" style={{ border: "1px solid #E3DCF5", background: "#FFFFFF" }}>
-            <Icon name="lock" size={14} className="text-muted" />
-            <input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} className="bg-transparent flex-1 text-sm p-0" style={{ border: "none", background: "transparent" }} placeholder="********" />
-          </div>
-          {error && <p className="text-xs text-rust">{error}</p>}
-          <button type="submit" disabled={busy || !password} className="btn-primary w-full rounded px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 focus-ring">
-            {busy && <Icon name="loader" size={15} spin />} Unlock
-          </button>
-          <button type="button" onClick={onLogout} className="w-full text-xs text-muted hover:text-main text-center">Not you? Log out</button>
-
-          {!resetMode ? (
-            <button type="button" onClick={() => setResetMode(true)} className="w-full text-xs text-muted hover:text-rust text-center pt-1">Forgot your passphrase?</button>
-          ) : (
-            <div className="pt-2 mt-1 border-t border-hair space-y-2">
-              <p className="text-xs text-rust">There's no way to recover data without the original passphrase -- that's what keeps it private from everyone, including the server. Your only option is a fresh start: this permanently erases this account's saved data (pipeline, resume, notes, learning, profile, document list).</p>
-              <p className="text-xs text-muted">To proceed: type the NEW passphrase you want to use in the box above, then click below.</p>
-              <button type="button" onClick={resetData} disabled={busy} className="w-full rounded px-3 py-2 text-xs font-medium focus-ring" style={{ border: "1px solid #F3C9C0", color: "#D97862", background: "transparent" }}>
-                {busy ? "Resetting..." : "Erase my data & start fresh with the passphrase typed above"}
-              </button>
-              <button type="button" onClick={() => setResetMode(false)} className="w-full text-xs text-muted hover:text-main text-center">Never mind</button>
-            </div>
-          )}
-        </form>
-      </div>
-    </div>
-  );
-}
-
-/* ============================== SET PASSPHRASE (first Google sign-in) ============================== */
-function SetPassphraseScreen({ username, salt, onSet, toast }) {
-  const [passphrase, setPassphrase] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setError("");
-    if (passphrase.length < 6) { setError("Use at least 6 characters."); return; }
-    if (passphrase !== confirm) { setError("Passphrases don't match."); return; }
-    setBusy(true);
-    try {
-      const key = await CRYPTO_HELPERS.deriveKey(passphrase, salt);
-      onSet(key);
-    } catch (err) {
-      setError("Something went wrong setting up encryption.");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="jshq min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-6">
-          <Icon name="shield" size={22} className="text-brass mx-auto mb-2" />
-          <h1 className="jshq-display text-xl text-paper">One more step, {username}</h1>
-          <p className="text-muted text-sm mt-1">Set a data passphrase. It's separate from your Google account and is what encrypts your data -- Google identifies you, but only this passphrase can unlock your jobs, resume, and notes. There's no recovery if you lose it, so save it somewhere safe.</p>
-        </div>
-        <form onSubmit={submit} className="bg-ink2 border border-hair rounded-lg p-5 space-y-3">
-          <div>
-            <label className="text-xs text-muted jshq-mono uppercase tracking-wide">Data passphrase</label>
-            <input type="password" autoFocus value={passphrase} onChange={(e) => setPassphrase(e.target.value)} className="w-full mt-1 rounded px-3 py-2 text-sm focus-ring" placeholder="At least 6 characters" />
-          </div>
-          <div>
-            <label className="text-xs text-muted jshq-mono uppercase tracking-wide">Confirm</label>
-            <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="w-full mt-1 rounded px-3 py-2 text-sm focus-ring" placeholder="Type it again" />
-          </div>
-          {error && <p className="text-xs text-rust">{error}</p>}
-          <button type="submit" disabled={busy || !passphrase || !confirm} className="btn-primary w-full rounded px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 focus-ring">
-            {busy && <Icon name="loader" size={15} spin />} Set passphrase & continue
           </button>
         </form>
       </div>
@@ -899,7 +723,7 @@ function ResumeScannerTab({ resumeText, setResumeText, resumeResult, setResumeRe
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div>
         <h2 className="jshq-display text-xl text-paper mb-1">Resume health check</h2>
-        <p className="text-muted text-sm mb-4">The instant score runs locally; AI coaching adds qualitative feedback on top.</p>
+        <p className="text-muted text-sm mb-4">The instant score is a local heuristic -- every ATS tool scores differently, so treat it as directional, not absolute. AI coaching adds qualitative feedback on top.</p>
         <textarea value={resumeText} onChange={(e) => setResumeText(e.target.value)} rows={16} className="w-full rounded p-3 text-sm resize-none focus-ring scrollbar-thin jshq-mono" placeholder="Paste your full resume text here..." />
         <div className="flex flex-wrap gap-2 mt-3">
           <button onClick={scan} disabled={!resumeText.trim() || scanning} className="btn-primary rounded px-4 py-2 text-sm font-medium flex items-center gap-2 focus-ring">
@@ -1368,7 +1192,7 @@ function fmtBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profile, setProfile, documents, setDocuments, encryptionKey, toast }) {
+function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profile, setProfile, documents, setDocuments, toast }) {
   const [editing, setEditing] = useState(false);
   const [headline, setHeadline] = useState(profile.headline);
   const [bio, setBio] = useState(profile.bio);
@@ -1454,12 +1278,11 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
     }
   };
 
-  const decryptDocToBuffer = async (doc) => {
+  const fetchDocBuffer = async (doc) => {
+    if (doc.ivB64) throw new Error("This file was uploaded by an older version of the app and can't be opened -- delete and re-upload it.");
     const res = await fetch(doc.url);
     if (!res.ok) throw new Error("Couldn't fetch the file.");
-    const buf = await res.arrayBuffer();
-    const dataB64 = bufToB64(new Uint8Array(buf));
-    return CRYPTO_HELPERS.decryptBytes(encryptionKey, doc.ivB64, dataB64);
+    return res.arrayBuffer();
   };
 
   const autofillFromLatestDocument = async () => {
@@ -1468,7 +1291,7 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
     const latest = [...pdfDocs].sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))[0];
     setAutofilling(true);
     try {
-      const plainBuf = await decryptDocToBuffer(latest);
+      const plainBuf = await fetchDocBuffer(latest);
       const text = await extractPdfText(plainBuf);
       await autofillFromText(text);
     } catch (err) {
@@ -1487,7 +1310,7 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
     setUploading(true);
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const { ivB64, dataB64 } = await CRYPTO_HELPERS.encryptBytes(encryptionKey, arrayBuffer);
+      const dataB64 = bufToB64(new Uint8Array(arrayBuffer));
       const res = await api("/api/documents/upload", { method: "POST", body: JSON.stringify({ dataB64 }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Upload failed");
@@ -1495,7 +1318,7 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
       setDocuments((docs) => [...docs, {
         id: `doc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         name: file.name, sizeBytes: file.size, url: data.url, pathname: data.pathname,
-        ivB64, uploadedAt: new Date().toISOString(),
+        uploadedAt: new Date().toISOString(),
       }]);
       toast("success", "File uploaded.");
     } catch (err) {
@@ -1506,14 +1329,14 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
 
   const handleDownload = async (doc) => {
     try {
-      const plainBuf = await decryptDocToBuffer(doc);
+      const plainBuf = await fetchDocBuffer(doc);
       const blobUrl = URL.createObjectURL(new Blob([plainBuf], { type: "application/pdf" }));
       const a = document.createElement("a");
       a.href = blobUrl; a.download = doc.name;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
     } catch (err) {
-      toast("error", "Couldn't decrypt that file.");
+      toast("error", err.message || "Couldn't open that file.");
     }
   };
 
@@ -1551,7 +1374,7 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
           </label>
         </div>
         <div className="flex items-start gap-4 pt-4 border-t border-hair">
-          <div className="w-14 h-14 rounded-full bg-ink3 flex items-center justify-center jshq-mono text-paper text-lg shrink-0">{initials(username)}</div>
+          <div className="w-14 h-14 rounded-full flex items-center justify-center jshq-mono avatar-grad text-lg shrink-0">{initials(username)}</div>
           <div className="min-w-0 flex-1">
             <h3 className="jshq-display text-lg text-paper">{username}</h3>
             {!editing ? (
@@ -1632,7 +1455,7 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
             <input ref={fileInputRef} type="file" accept="application/pdf" onChange={handleUpload} className="hidden" disabled={uploading} />
           </label>
         </div>
-        <p className="text-xs text-muted mb-3">Store a copy of your resume, transcripts, or certificates. Files are encrypted in your browser before upload -- up to 4MB each.</p>
+        <p className="text-xs text-muted mb-3">Store a copy of your resume, transcripts, or certificates -- up to 4MB each, visible only to your account.</p>
         {documents.length === 0 ? (
           <p className="text-xs text-muted italic">No documents uploaded yet.</p>
         ) : (
@@ -1671,7 +1494,7 @@ const TABS = [
 const DEFAULT_LEARNING = { targetRole: "", topics: [], certifications: [], summary: "" };
 const DEFAULT_PROFILE = { headline: "", bio: "", skills: [] };
 
-function MainApp({ username, encryptionKey, onLogout, toast }) {
+function MainApp({ username, onLogout, toast }) {
   const [activeTab, setActiveTab] = useState("tracker");
   const [loaded, setLoaded] = useState(false);
   const [jobs, setJobs] = useState([]);
@@ -1695,12 +1518,12 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
         const profileBlob = (await profileRes.json()).blob;
         const documentsBlob = (await documentsRes.json()).blob;
 
-        const jobsData = jobsBlob ? await CRYPTO_HELPERS.decryptJSON(encryptionKey, jobsBlob) : [];
-        const resumeData = resumeBlob ? await CRYPTO_HELPERS.decryptJSON(encryptionKey, resumeBlob) : { text: "", result: null };
-        const interviewsData = interviewsBlob ? await CRYPTO_HELPERS.decryptJSON(encryptionKey, interviewsBlob) : {};
-        const learningData = learningBlob ? await CRYPTO_HELPERS.decryptJSON(encryptionKey, learningBlob) : DEFAULT_LEARNING;
-        const profileData = profileBlob ? await CRYPTO_HELPERS.decryptJSON(encryptionKey, profileBlob) : DEFAULT_PROFILE;
-        const documentsData = documentsBlob ? await CRYPTO_HELPERS.decryptJSON(encryptionKey, documentsBlob) : [];
+        const jobsData = parseBlob(jobsBlob, []);
+        const resumeData = parseBlob(resumeBlob, { text: "", result: null });
+        const interviewsData = parseBlob(interviewsBlob, {});
+        const learningData = parseBlob(learningBlob, DEFAULT_LEARNING);
+        const profileData = parseBlob(profileBlob, DEFAULT_PROFILE);
+        const documentsData = parseBlob(documentsBlob, []);
 
         setJobs(jobsData || []);
         setResumeText((resumeData && resumeData.text) || "");
@@ -1710,7 +1533,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
         setProfile({ ...DEFAULT_PROFILE, ...(profileData || {}) });
         setDocuments(documentsData || []);
       } catch (e) {
-        toast("error", "Couldn't load or decrypt your saved data.");
+        toast("error", "Couldn't load your saved data.");
       }
       setLoaded(true);
     })();
@@ -1720,7 +1543,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     if (!loaded) return;
     (async () => {
       try {
-        const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, jobs);
+        const blob = JSON.stringify(jobs);
         await api("/api/data/jobs", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
@@ -1730,7 +1553,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     if (!loaded) return;
     (async () => {
       try {
-        const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, { text: resumeText, result: resumeResult });
+        const blob = JSON.stringify({ text: resumeText, result: resumeResult });
         await api("/api/data/resume", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
@@ -1740,7 +1563,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     if (!loaded) return;
     (async () => {
       try {
-        const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, interviewData);
+        const blob = JSON.stringify(interviewData);
         await api("/api/data/interviews", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
@@ -1750,7 +1573,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     if (!loaded) return;
     (async () => {
       try {
-        const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, learning);
+        const blob = JSON.stringify(learning);
         await api("/api/data/learning", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
@@ -1760,7 +1583,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     if (!loaded) return;
     (async () => {
       try {
-        const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, profile);
+        const blob = JSON.stringify(profile);
         await api("/api/data/profile", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
@@ -1770,7 +1593,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
     if (!loaded) return;
     (async () => {
       try {
-        const blob = await CRYPTO_HELPERS.encryptJSON(encryptionKey, documents);
+        const blob = JSON.stringify(documents);
         await api("/api/data/documents", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
@@ -1794,7 +1617,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
         </nav>
         <div className="mt-auto pt-4 px-2 border-t border-hair">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-6 h-6 rounded-full bg-ink3 flex items-center justify-center jshq-mono text-paper" style={{ fontSize: 10 }}>{initials(username)}</div>
+            <div className="w-6 h-6 rounded-full flex items-center justify-center jshq-mono avatar-grad" style={{ fontSize: 10 }}>{initials(username)}</div>
             <span className="text-xs text-main truncate">{username}</span>
           </div>
           <button onClick={onLogout} className="text-xs text-muted hover:text-rust flex items-center gap-1.5"><Icon name="logout" size={13} /> Log out</button>
@@ -1828,7 +1651,7 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
             {activeTab === "scanner" && <ResumeScannerTab resumeText={resumeText} setResumeText={setResumeText} resumeResult={resumeResult} setResumeResult={setResumeResult} toast={toast} />}
             {activeTab === "match" && <MatchAnalyzerTab resumeText={resumeText} setResumeText={setResumeText} toast={toast} />}
             {activeTab === "prep" && <InterviewPrepSection jobs={jobs} interviewData={interviewData} setInterviewData={setInterviewData} learning={learning} setLearning={setLearning} toast={toast} />}
-            {activeTab === "profile" && <ProfileTab username={username} jobs={jobs} resumeText={resumeText} resumeResult={resumeResult} learning={learning} profile={profile} setProfile={setProfile} documents={documents} setDocuments={setDocuments} encryptionKey={encryptionKey} toast={toast} />}
+            {activeTab === "profile" && <ProfileTab username={username} jobs={jobs} resumeText={resumeText} resumeResult={resumeResult} learning={learning} profile={profile} setProfile={setProfile} documents={documents} setDocuments={setDocuments} toast={toast} />}
           </div>
         )}
       </main>
@@ -1840,8 +1663,6 @@ function MainApp({ username, encryptionKey, onLogout, toast }) {
 function Root() {
   const [phase, setPhase] = useState("checking");
   const [username, setUsername] = useState(null);
-  const [salt, setSalt] = useState(null);
-  const [encryptionKey, setEncryptionKey] = useState(null);
   const [toasts, setToasts] = useState([]);
 
   const toast = useCallback((type, message) => {
@@ -1860,8 +1681,7 @@ function Root() {
         if (res.ok) {
           const data = await res.json();
           setUsername(data.username);
-          setSalt(data.salt);
-          setPhase("locked");
+          setPhase("loggedIn");
         } else {
           clearSession();
           setPhase("loggedOut");
@@ -1872,21 +1692,11 @@ function Root() {
     })();
   }, []);
 
-  const handleAuthed = (uname, key) => { setUsername(uname); setEncryptionKey(key); setPhase("unlocked"); };
-  const handleUnlocked = (key) => { setEncryptionKey(key); setPhase("unlocked"); };
-  const handleGoogleResult = (data) => {
-    setUsername(data.username);
-    setSalt(data.salt);
-    if (data.isNewUser) {
-      setPhase("setPassphrase");
-    } else {
-      setPhase("locked"); // existing account -- reuse the normal unlock flow to re-derive the key
-    }
-  };
-  const handlePassphraseSet = (key) => { setEncryptionKey(key); setPhase("unlocked"); };
+  const handleAuthed = (uname) => { setUsername(uname); setPhase("loggedIn"); };
+  const handleGoogleResult = (data) => { setUsername(data.username); setPhase("loggedIn"); };
   const handleLogout = () => {
     clearSession();
-    setUsername(null); setSalt(null); setEncryptionKey(null);
+    setUsername(null);
     setPhase("loggedOut");
     toast("info", "Logged out");
   };
@@ -1898,9 +1708,7 @@ function Root() {
   return (
     <>
       {phase === "loggedOut" && <AuthScreen onAuthed={handleAuthed} onGoogleResult={handleGoogleResult} toast={toast} />}
-      {phase === "locked" && <UnlockScreen username={username} salt={salt} onUnlocked={handleUnlocked} onLogout={handleLogout} toast={toast} />}
-      {phase === "setPassphrase" && <SetPassphraseScreen username={username} salt={salt} onSet={handlePassphraseSet} toast={toast} />}
-      {phase === "unlocked" && <MainApp username={username} encryptionKey={encryptionKey} onLogout={handleLogout} toast={toast} />}
+      {phase === "loggedIn" && <MainApp username={username} onLogout={handleLogout} toast={toast} />}
       <ToastStack toasts={toasts} remove={removeToast} />
     </>
   );
