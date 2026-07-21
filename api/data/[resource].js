@@ -1,5 +1,5 @@
 const { getRedis, getJSON, setJSON } = require("../../lib/redis");
-const { verifyAuth } = require("../../lib/auth");
+const { verifyAuth, verifyAuthDetailed } = require("../../lib/auth");
 
 // Every resource here follows the same contract: an opaque, client-encrypted
 // JSON blob (a string) stored under blob:<resource>:<userId>. The server
@@ -13,8 +13,8 @@ module.exports = async (req, res) => {
     return res.status(404).json({ error: "Unknown resource" });
   }
 
-  const payload = verifyAuth(req);
-  if (!payload) return res.status(401).json({ error: "Not authenticated" });
+  const { payload, reason } = verifyAuthDetailed(req);
+  if (!payload) return res.status(401).json({ error: "Not authenticated", reason });
 
   try {
     const redis = getRedis();
