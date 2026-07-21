@@ -4,7 +4,7 @@ const { verifyAuth, verifyAuthDetailed } = require("../../lib/auth");
 // Every resource here follows the same contract: an opaque, client-encrypted
 // JSON blob (a string) stored under blob:<resource>:<userId>. The server
 // never sees plaintext content for any of these.
-const ALLOWED_RESOURCES = new Set(["jobs", "resume", "interviews", "learning", "profile", "documents"]);
+const ALLOWED_RESOURCES = new Set(["jobs", "resume", "interviews", "learning", "profile", "documents", "contacts", "todos"]);
 
 module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "no-store, must-revalidate");
