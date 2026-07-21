@@ -13,10 +13,6 @@ async function handleSignup(req, res) {
   if (!password || password.length < 6) {
     return res.status(400).json({ error: "Password must be at least 6 characters." });
   }
-  if (!salt || typeof salt !== "string") {
-    return res.status(400).json({ error: "Missing encryption setup — try reloading the page." });
-  }
-
   const uname = username.trim();
   const redis = getRedis();
   const usernameKey = `user:byUsername:${uname.toLowerCase()}`;
@@ -28,7 +24,7 @@ async function handleSignup(req, res) {
   const passwordHash = await bcrypt.hash(password, 10);
 
   await redis.set(usernameKey, id);
-  await setJSON(redis, `user:${id}`, { id, username: uname, passwordHash, salt });
+  await setJSON(redis, `user:${id}`, { id, username: uname, passwordHash, salt: typeof salt === "string" ? salt : "" });
 
   res.status(200).json({ token: signToken(id, uname), username: uname, salt });
 }
@@ -73,9 +69,6 @@ async function handleGoogle(req, res) {
   let isNewUser = false;
 
   if (!userId) {
-    if (!salt || typeof salt !== "string") {
-      return res.status(400).json({ error: "Missing encryption setup — try reloading the page." });
-    }
     const base = (payload.email || "user").split("@")[0].replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 24) || "user";
     let uname = base;
     let n = 1;
@@ -88,7 +81,7 @@ async function handleGoogle(req, res) {
     await redis.set(googleKey, id);
     await setJSON(redis, `user:${id}`, {
       id, username: uname, googleId: payload.sub, email: payload.email || null,
-      passwordHash: null, salt,
+      passwordHash: null, salt: typeof salt === "string" ? salt : "",
     });
     userId = id;
     isNewUser = true;
@@ -110,6 +103,7 @@ async function handleMe(req, res) {
 }
 
 module.exports = async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
   const { action } = req.query;
   try {
     if (action === "signup") return await handleSignup(req, res);
