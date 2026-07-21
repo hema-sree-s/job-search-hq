@@ -515,10 +515,31 @@ function AuthScreen({ onAuthed, onGoogleResult, toast }) {
   const [mode, setMode] = useState("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [forgotMode, setForgotMode] = useState(false);
   const [googleClientId, setGoogleClientId] = useState(null);
   const googleBtnRef = useRef(null);
+
+  const requestReset = async (e) => {
+    e.preventDefault();
+    if (!username.trim()) { setError("Enter your username first."); return; }
+    setError(""); setInfo(""); setBusy(true);
+    try {
+      const res = await fetch("/api/auth/request-reset", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username.trim() }),
+      });
+      const data = await res.json();
+      setInfo(data.message || "If that account has an email on file, a reset link has been sent.");
+      setForgotMode(false);
+    } catch (err) {
+      setError("Couldn't reach the server.");
+    }
+    setBusy(false);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -527,6 +548,7 @@ function AuthScreen({ onAuthed, onGoogleResult, toast }) {
     setBusy(true);
     try {
       const body = { username: username.trim(), password };
+      if (mode === "signup" && signupEmail.trim()) body.email = signupEmail.trim();
 
       const res = await fetch(`/api/auth/${mode}`, {
         method: "POST",
@@ -622,13 +644,29 @@ function AuthScreen({ onAuthed, onGoogleResult, toast }) {
             </div>
           </div>
           {mode === "signup" && (
-            <p className="text-xs text-muted flex items-start gap-1.5"><Icon name="shield" size={13} className="shrink-0 mt-0.5" /> This password also becomes your encryption key. There's no "forgot password" recovery for old data -- write it down somewhere safe.</p>
+            <div>
+              <label className="text-xs text-muted jshq-mono uppercase tracking-wide">Email (optional, for password reset)</label>
+              <input type="email" value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} className="w-full mt-1 rounded px-3 py-2 text-sm focus-ring" placeholder="you@example.com" />
+            </div>
           )}
           {error && <p className="text-xs text-rust">{error}</p>}
+          {info && <p className="text-xs text-green">{info}</p>}
           <button type="submit" disabled={busy || !username.trim() || !password} className="btn-primary w-full rounded px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 focus-ring">
             {busy && <Icon name="loader" size={15} spin />}
             {mode === "login" ? "Log in" : "Create account"}
           </button>
+          {mode === "login" && !forgotMode && (
+            <button type="button" onClick={() => { setForgotMode(true); setInfo(""); setError(""); }} className="w-full text-xs text-muted hover:text-main text-center">Forgot your password?</button>
+          )}
+          {forgotMode && (
+            <div className="pt-2 border-t border-hair space-y-2">
+              <p className="text-xs text-muted">Enter your username above, and if your account has an email on file (Google accounts do automatically; others can add one in Profile → Account), you'll get a reset link.</p>
+              <div className="flex gap-2">
+                <button type="button" onClick={requestReset} disabled={busy || !username.trim()} className="btn-ghost rounded px-3 py-1.5 text-xs focus-ring flex-1">Send reset link</button>
+                <button type="button" onClick={() => setForgotMode(false)} className="text-xs text-muted hover:text-main px-2">Cancel</button>
+              </div>
+            </div>
+          )}
         </form>
       </div>
     </div>
@@ -887,6 +925,7 @@ function ResumeScannerTab({ resumeText, setResumeText, resumeResult, setResumeRe
       <div>
         <h2 className="jshq-display text-xl text-paper mb-1">Resume health check</h2>
         <p className="text-muted text-sm mb-4">The instant score is a local heuristic -- every ATS tool scores differently, so treat it as directional, not absolute. AI coaching adds qualitative feedback on top.</p>
+        {versionBar}
         <textarea value={resumeText} onChange={(e) => setResumeText(e.target.value)} rows={16} className="w-full rounded p-3 text-sm resize-none focus-ring scrollbar-thin jshq-mono" placeholder="Paste your full resume text here..." />
         <div className="flex flex-wrap gap-2 mt-3">
           <button onClick={scan} disabled={!resumeText.trim() || scanning} className="btn-primary rounded px-4 py-2 text-sm font-medium flex items-center gap-2 focus-ring">
@@ -1359,6 +1398,155 @@ function InterviewPrepSection({ jobs, interviewData, setInterviewData, learning,
   );
 }
 
+/* ============================== TO-DOS TAB ============================== */
+function TodoList({ title, caption, items, onAdd, onToggle, onRemove, onClearDone }) {
+  const [input, setInput] = useState("");
+  const doneCount = items.filter((t) => t.done).length;
+  return (
+    <div className="bg-ink2 border border-hair rounded-lg p-5">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-sm font-medium text-paper">{title}</p>
+        <span className="jshq-mono text-xs text-muted">{doneCount}/{items.length} done</span>
+      </div>
+      <p className="text-xs text-muted mb-3">{caption}</p>
+      <form onSubmit={(e) => { e.preventDefault(); if (input.trim()) { onAdd(input.trim()); setInput(""); } }} className="flex gap-2 mb-3">
+        <input value={input} onChange={(e) => setInput(e.target.value)} className="flex-1 rounded px-3 py-2 text-sm focus-ring" placeholder="Add a task and press Enter" />
+        <button type="submit" disabled={!input.trim()} className="btn-ghost rounded px-3 py-2 text-sm focus-ring"><Icon name="plus" size={15} /></button>
+      </form>
+      {items.length === 0 ? (
+        <p className="text-xs text-muted italic">Nothing here yet.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {items.map((t) => (
+            <div key={t.id} className="flex items-center gap-2.5 group">
+              <input type="checkbox" checked={!!t.done} onChange={() => onToggle(t.id)} style={{ width: 16, height: 16, accentColor: "#B9A0EA" }} />
+              <span className={`text-sm flex-1 ${t.done ? "text-muted line-through" : "text-main"}`}>{t.text}</span>
+              <button onClick={() => onRemove(t.id)} className="opacity-0 group-hover:opacity-100 text-muted hover:text-rust" aria-label="Remove task"><Icon name="x" size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {doneCount > 0 && <button onClick={onClearDone} className="text-xs text-muted hover:text-main mt-3">Clear completed</button>}
+    </div>
+  );
+}
+
+function TodosTab({ todos, setTodos, toast }) {
+  const makeOps = (listKey) => ({
+    onAdd: (text) => setTodos((p) => ({ ...p, [listKey]: [...p[listKey], { id: `t_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, text, done: false }] })),
+    onToggle: (id) => setTodos((p) => ({ ...p, [listKey]: p[listKey].map((t) => (t.id === id ? { ...t, done: !t.done } : t)) })),
+    onRemove: (id) => setTodos((p) => ({ ...p, [listKey]: p[listKey].filter((t) => t.id !== id) })),
+    onClearDone: () => setTodos((p) => ({ ...p, [listKey]: p[listKey].filter((t) => !t.done) })),
+  });
+
+  return (
+    <div>
+      <div className="mb-5">
+        <h2 className="jshq-display text-xl text-paper">To-do lists</h2>
+        <p className="text-muted text-sm mt-0.5">Pending items are included in your single morning reminder email (if you have an email set in Profile → Account).</p>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <TodoList title="Today" caption="Check-offs reset automatically each morning -- the tasks stay, ready for a fresh day." items={todos.daily} {...makeOps("daily")} />
+        <TodoList title="This week" caption="Check-offs reset automatically every Monday." items={todos.weekly} {...makeOps("weekly")} />
+      </div>
+    </div>
+  );
+}
+
+/* ============================== CONTACTS TAB ============================== */
+function ContactsTab({ contacts, setContacts, toast }) {
+  const [form, setForm] = useState({ name: "", company: "", role: "", link: "", notes: "" });
+  const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState(null);
+
+  const addContact = (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) return;
+    setContacts((prev) => [{
+      id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name: form.name.trim(), company: form.company.trim(), role: form.role.trim(),
+      link: form.link.trim(), notes: form.notes.trim(), lastContacted: "",
+    }, ...prev]);
+    setForm({ name: "", company: "", role: "", link: "", notes: "" });
+    toast("success", "Contact added.");
+  };
+
+  const update = (id, patch) => setContacts((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  const remove = (id) => { setContacts((prev) => prev.filter((x) => x.id !== id)); toast("info", "Contact removed."); };
+  const markContacted = (id) => update(id, { lastContacted: new Date().toISOString().slice(0, 10) });
+
+  const q = search.trim().toLowerCase();
+  const visible = q ? contacts.filter((x) => [x.name, x.company, x.role, x.notes].some((f) => (f || "").toLowerCase().includes(q))) : contacts;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div>
+          <h2 className="jshq-display text-xl text-paper">Networking contacts</h2>
+          <p className="text-muted text-sm mt-0.5">Recruiters, referrals, and people worth following up with.</p>
+        </div>
+        <div className="flex items-center gap-2 rounded px-3 py-2" style={{ border: "1px solid #E3DCF5", background: "#FFFFFF" }}>
+          <Icon name="search" size={14} className="text-muted" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} className="bg-transparent text-sm p-0 w-40" style={{ border: "none", background: "transparent" }} placeholder="Search contacts..." />
+          {search && <button onClick={() => setSearch("")} className="text-muted hover:text-main"><Icon name="x" size={13} /></button>}
+        </div>
+      </div>
+
+      <form onSubmit={addContact} className="bg-ink2 border border-hair rounded-lg p-4 mb-5">
+        <div className="flex flex-wrap gap-2">
+          <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="flex-1 min-w-36 rounded px-3 py-2 text-sm focus-ring" placeholder="Name *" />
+          <input value={form.company} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))} className="flex-1 min-w-32 rounded px-3 py-2 text-sm focus-ring" placeholder="Company" />
+          <input value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} className="flex-1 min-w-32 rounded px-3 py-2 text-sm focus-ring" placeholder="Role (e.g. Recruiter)" />
+          <input value={form.link} onChange={(e) => setForm((f) => ({ ...f, link: e.target.value }))} className="flex-1 min-w-40 rounded px-3 py-2 text-sm focus-ring" placeholder="Email or LinkedIn URL" />
+          <button type="submit" disabled={!form.name.trim()} className="btn-primary rounded px-4 py-2 text-sm font-medium focus-ring">Add</button>
+        </div>
+        <input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} className="w-full mt-2 rounded px-3 py-2 text-sm focus-ring" placeholder="Notes (how you met, what they said, next step...)" />
+      </form>
+
+      {visible.length === 0 ? (
+        <p className="text-sm text-muted italic text-center py-8">{contacts.length === 0 ? "No contacts yet -- add recruiters and referrals above." : "No contacts match your search."}</p>
+      ) : (
+        <div className="space-y-2.5">
+          {visible.map((x) => (
+            <div key={x.id} className="bg-ink2 border border-hair rounded-lg p-4">
+              {editingId === x.id ? (
+                <form onSubmit={(e) => { e.preventDefault(); setEditingId(null); toast("success", "Contact updated."); }} className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    <input value={x.name} onChange={(e) => update(x.id, { name: e.target.value })} className="flex-1 min-w-32 rounded px-3 py-1.5 text-sm focus-ring" placeholder="Name" />
+                    <input value={x.company} onChange={(e) => update(x.id, { company: e.target.value })} className="flex-1 min-w-28 rounded px-3 py-1.5 text-sm focus-ring" placeholder="Company" />
+                    <input value={x.role} onChange={(e) => update(x.id, { role: e.target.value })} className="flex-1 min-w-28 rounded px-3 py-1.5 text-sm focus-ring" placeholder="Role" />
+                    <input value={x.link} onChange={(e) => update(x.id, { link: e.target.value })} className="flex-1 min-w-36 rounded px-3 py-1.5 text-sm focus-ring" placeholder="Email or LinkedIn" />
+                  </div>
+                  <input value={x.notes} onChange={(e) => update(x.id, { notes: e.target.value })} className="w-full rounded px-3 py-1.5 text-sm focus-ring" placeholder="Notes" />
+                  <button type="submit" className="btn-primary rounded px-3 py-1.5 text-xs font-medium focus-ring">Done</button>
+                </form>
+              ) : (
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-paper">{x.name}{(x.role || x.company) && <span className="text-muted font-normal"> · {[x.role, x.company].filter(Boolean).join(" at ")}</span>}</p>
+                    {x.notes && <p className="text-xs text-muted mt-1">{x.notes}</p>}
+                    <p className="text-xs text-muted mt-1.5 jshq-mono" style={{ fontSize: 11 }}>
+                      {x.lastContacted ? `Last contacted ${x.lastContacted}` : "Never contacted"}
+                      {x.link && <> · {/@/.test(x.link) && !/^https?:/.test(x.link)
+                        ? <a href={`mailto:${x.link}`} className="text-brass hover:underline">{x.link}</a>
+                        : <a href={/^https?:/.test(x.link) ? x.link : `https://${x.link}`} target="_blank" rel="noreferrer" className="text-brass hover:underline">profile</a>}</>}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => markContacted(x.id)} className="btn-ghost rounded px-2.5 py-1.5 text-xs focus-ring" title="Mark contacted today">Contacted today</button>
+                    <button onClick={() => setEditingId(x.id)} className="text-muted hover:text-main" aria-label="Edit"><Icon name="edit" size={14} /></button>
+                    <button onClick={() => remove(x.id)} className="text-muted hover:text-rust" aria-label="Delete"><Icon name="trash" size={14} /></button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================== PROFILE TAB ============================== */
 function fmtBytes(n) {
   if (n < 1024) return `${n} B`;
@@ -1366,8 +1554,33 @@ function fmtBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function AccountSection({ username, jobs, resumeText, resumeResult, interviewData, learning, profile, documents, onLogout, toast }) {
+function AccountSection({ username, jobs, contacts, todos, resumeVersions, resumeText, resumeResult, interviewData, learning, profile, documents, onLogout, toast }) {
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
+  const [emailVal, setEmailVal] = useState("");
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [currentEmail, setCurrentEmail] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api("/api/auth/me");
+        const data = await res.json();
+        if (res.ok) { setCurrentEmail(data.email || null); setEmailVal(data.email || ""); }
+      } catch (e) { /* fine */ }
+    })();
+  }, []);
+
+  const saveEmail = async (e) => {
+    e.preventDefault();
+    setEmailBusy(true);
+    try {
+      const res = await api("/api/auth/set-email", { method: "POST", body: JSON.stringify({ email: emailVal.trim() }) });
+      const data = await res.json();
+      if (!res.ok) toast("error", data.error || "Couldn't save email.");
+      else { setCurrentEmail(data.email); toast("success", data.email ? "Email saved." : "Email removed."); }
+    } catch (err) { toast("error", "Couldn't reach the server."); }
+    setEmailBusy(false);
+  };
   const [pwBusy, setPwBusy] = useState(false);
   const [delConfirm, setDelConfirm] = useState("");
   const [delBusy, setDelBusy] = useState(false);
@@ -1398,7 +1611,7 @@ function AccountSection({ username, jobs, resumeText, resumeResult, interviewDat
   };
 
   const exportJSON = () => {
-    const data = { exportedAt: new Date().toISOString(), username, jobs, resume: { text: resumeText, result: resumeResult }, interviews: interviewData, learning, profile, documents };
+    const data = { exportedAt: new Date().toISOString(), username, jobs, contacts, todos, resume: { versions: resumeVersions }, interviews: interviewData, learning, profile, documents };
     download(`job-search-hq-export-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), "application/json");
     toast("success", "Exported all data as JSON.");
   };
@@ -1431,6 +1644,15 @@ function AccountSection({ username, jobs, resumeText, resumeResult, interviewDat
       <p className="text-sm font-medium text-paper flex items-center gap-1.5"><Icon name="user" size={15} className="text-brass" /> Account</p>
 
       <div>
+        <p className="text-xs text-muted jshq-mono uppercase tracking-wide mb-2">Email (for password reset & deadline reminders)</p>
+        <form onSubmit={saveEmail} className="flex flex-wrap gap-2">
+          <input type="email" value={emailVal} onChange={(e) => setEmailVal(e.target.value)} className="flex-1 min-w-48 rounded px-3 py-2 text-sm focus-ring" placeholder="you@example.com" />
+          <button type="submit" disabled={emailBusy} className="btn-ghost rounded px-4 py-2 text-sm focus-ring">{emailBusy ? "Saving..." : "Save email"}</button>
+        </form>
+        <p className="text-xs text-muted mt-1.5">{currentEmail ? `Reset links and daily deadline reminder emails go to ${currentEmail}.` : "No email on file -- without one, a forgotten password can't be reset and deadline reminder emails can't be sent. (Google sign-in accounts get their email automatically.)"} Emails only work if the deployment has BREVO_API_KEY configured.</p>
+      </div>
+
+      <div className="pt-4 border-t border-hair">
         <p className="text-xs text-muted jshq-mono uppercase tracking-wide mb-2">Change password</p>
         <form onSubmit={changePassword} className="flex flex-wrap gap-2 items-end">
           <input type="password" value={pwForm.current} onChange={(e) => setPwForm((f) => ({ ...f, current: e.target.value }))} className="flex-1 min-w-36 rounded px-3 py-2 text-sm focus-ring" placeholder="Current password (blank if Google-only)" />
@@ -1468,7 +1690,7 @@ function AccountSection({ username, jobs, resumeText, resumeResult, interviewDat
   );
 }
 
-function ProfileTab({ username, jobs, resumeText, resumeResult, interviewData, learning, profile, setProfile, documents, setDocuments, onLogout, toast }) {
+function ProfileTab({ username, jobs, contacts, todos, resumeVersions, resumeText, resumeResult, interviewData, learning, profile, setProfile, documents, setDocuments, onLogout, toast }) {
   const [editing, setEditing] = useState(false);
   const [headline, setHeadline] = useState(profile.headline);
   const [bio, setBio] = useState(profile.bio);
@@ -1808,7 +2030,7 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, interviewData, l
           </div>
         )}
         {resumeResult && (
-          <p className="text-xs text-muted mt-3 pt-3 border-t border-hair">Latest resume scan score: <span className="text-paper font-medium">{resumeResult.score}/100</span></p>
+          <p className="text-xs text-muted mt-3 pt-3 border-t border-hair">Latest resume scan score: <span className="text-paper font-medium">{resumeResult.total}/100</span></p>
         )}
       </div>
 
@@ -1845,7 +2067,7 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, interviewData, l
         )}
       </div>
 
-      <AccountSection username={username} jobs={jobs} resumeText={resumeText} resumeResult={resumeResult} interviewData={interviewData} learning={learning} profile={profile} documents={documents} onLogout={onLogout} toast={toast} />
+      <AccountSection username={username} jobs={jobs} contacts={contacts} todos={todos} resumeVersions={resumeVersions} resumeText={resumeText} resumeResult={resumeResult} interviewData={interviewData} learning={learning} profile={profile} documents={documents} onLogout={onLogout} toast={toast} />
     </div>
   );
 }
@@ -1856,10 +2078,21 @@ const TABS = [
   { key: "scanner", label: "Resume Scanner", icon: "search" },
   { key: "match", label: "Match Analyzer", icon: "target" },
   { key: "prep", label: "Interview Prep", icon: "clipboard" },
+  { key: "todos", label: "To-dos", icon: "check" },
+  { key: "contacts", label: "Contacts", icon: "users" },
   { key: "profile", label: "Profile", icon: "user" },
 ];
 
 const DEFAULT_LEARNING = { targetRole: "", topics: [], certifications: [], summary: "" };
+const DEFAULT_TODOS = { daily: [], weekly: [], lastDailyReset: "", lastWeeklyReset: "" };
+
+// Monday of the current week, as YYYY-MM-DD -- used to auto-reset weekly to-dos.
+function currentWeekStart() {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0=Sun
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  return d.toISOString().slice(0, 10);
+}
 const DEFAULT_PROFILE = { headline: "", bio: "", skills: [], avatar: "", experience: [], education: [], certifications: [] };
 const AVATAR_CHOICES = ["🦊", "🐼", "🐨", "🐱", "🐶", "🦉", "🐧", "🐢", "🦁", "🐸", "🧑‍💻", "👩‍💼", "🧑‍🚀", "🧑‍🎨", "🥷", "🤖"];
 
@@ -1867,8 +2100,38 @@ function MainApp({ username, onLogout, toast }) {
   const [activeTab, setActiveTab] = useState("tracker");
   const [loaded, setLoaded] = useState(false);
   const [jobs, setJobs] = useState([]);
-  const [resumeText, setResumeText] = useState("");
-  const [resumeResult, setResumeResult] = useState(null);
+  const [contacts, setContacts] = useState([]);
+  const [todos, setTodos] = useState(DEFAULT_TODOS);
+  // Multiple resume versions: {activeId, versions: [{id, name, text, result}]}
+  const [resumeVersions, setResumeVersions] = useState([{ id: "v_default", name: "Main resume", text: "", result: null }]);
+  const [activeResumeId, setActiveResumeId] = useState("v_default");
+  const activeResume = resumeVersions.find((v) => v.id === activeResumeId) || resumeVersions[0];
+  const resumeText = activeResume ? activeResume.text : "";
+  const resumeResult = activeResume ? activeResume.result : null;
+  const setResumeText = (textOrFn) => setResumeVersions((prev) => prev.map((v) => {
+    if (v.id !== activeResumeId) return v;
+    const text = typeof textOrFn === "function" ? textOrFn(v.text) : textOrFn;
+    return { ...v, text };
+  }));
+  const setResumeResult = (resultOrFn) => setResumeVersions((prev) => prev.map((v) => {
+    if (v.id !== activeResumeId) return v;
+    const result = typeof resultOrFn === "function" ? resultOrFn(v.result) : resultOrFn;
+    return { ...v, result };
+  }));
+  const createResumeVersion = (name) => {
+    const id = `v_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    setResumeVersions((prev) => [...prev, { id, name: name || `Version ${prev.length + 1}`, text: "", result: null }]);
+    setActiveResumeId(id);
+  };
+  const renameResumeVersion = (id, name) => setResumeVersions((prev) => prev.map((v) => (v.id === id ? { ...v, name } : v)));
+  const deleteResumeVersion = (id) => {
+    setResumeVersions((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((v) => v.id !== id);
+      if (id === activeResumeId) setActiveResumeId(next[0].id);
+      return next;
+    });
+  };
   const [interviewData, setInterviewData] = useState({});
   const [learning, setLearning] = useState(DEFAULT_LEARNING);
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
@@ -1888,20 +2151,22 @@ function MainApp({ username, onLogout, toast }) {
       setLoadError(false);
       try {
         const responses = await Promise.all([
-          api("/api/data/jobs"), api("/api/data/resume"), api("/api/data/interviews"), api("/api/data/learning"), api("/api/data/profile"), api("/api/data/documents"),
+          api("/api/data/jobs"), api("/api/data/resume"), api("/api/data/interviews"), api("/api/data/learning"), api("/api/data/profile"), api("/api/data/documents"), api("/api/data/contacts"), api("/api/data/todos"),
         ]);
         // CRITICAL: if ANY response isn't a clean 200 (e.g. the deployment is
         // mid-rollout right after a code push), abort WITHOUT marking loaded.
         // If we marked loaded anyway, the auto-save effects below would
         // immediately overwrite the server's real data with empty state.
         if (responses.some((r) => !r.ok)) throw new Error("One or more data requests failed");
-        const [jobsRes, resumeRes, interviewsRes, learningRes, profileRes, documentsRes] = responses;
+        const [jobsRes, resumeRes, interviewsRes, learningRes, profileRes, documentsRes, contactsRes, todosRes] = responses;
         const jobsBlob = (await jobsRes.json()).blob;
         const resumeBlob = (await resumeRes.json()).blob;
         const interviewsBlob = (await interviewsRes.json()).blob;
         const learningBlob = (await learningRes.json()).blob;
         const profileBlob = (await profileRes.json()).blob;
         const documentsBlob = (await documentsRes.json()).blob;
+        const contactsBlob = (await contactsRes.json()).blob;
+        const todosBlob = (await todosRes.json()).blob;
 
         const jobsData = parseBlob(jobsBlob, []);
         const resumeData = parseBlob(resumeBlob, { text: "", result: null });
@@ -1909,10 +2174,29 @@ function MainApp({ username, onLogout, toast }) {
         const learningData = parseBlob(learningBlob, DEFAULT_LEARNING);
         const profileData = parseBlob(profileBlob, DEFAULT_PROFILE);
         const documentsData = parseBlob(documentsBlob, []);
+        const contactsData = parseBlob(contactsBlob, []);
+        let todosData = { ...DEFAULT_TODOS, ...(parseBlob(todosBlob, DEFAULT_TODOS) || {}) };
+        // Auto-reset check-offs: daily each new day, weekly each new Monday.
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const weekStr = currentWeekStart();
+        if (todosData.lastDailyReset !== todayStr) {
+          todosData = { ...todosData, daily: (todosData.daily || []).map((t) => ({ ...t, done: false })), lastDailyReset: todayStr };
+        }
+        if (todosData.lastWeeklyReset !== weekStr) {
+          todosData = { ...todosData, weekly: (todosData.weekly || []).map((t) => ({ ...t, done: false })), lastWeeklyReset: weekStr };
+        }
 
         setJobs(jobsData || []);
-        setResumeText((resumeData && resumeData.text) || "");
-        setResumeResult((resumeData && resumeData.result) || null);
+        setContacts(contactsData || []);
+        setTodos(todosData);
+        // Resume: accept both the new multi-version shape and the legacy single {text, result}
+        if (resumeData && Array.isArray(resumeData.versions) && resumeData.versions.length) {
+          setResumeVersions(resumeData.versions);
+          setActiveResumeId(resumeData.versions.some((v) => v.id === resumeData.activeId) ? resumeData.activeId : resumeData.versions[0].id);
+        } else {
+          setResumeVersions([{ id: "v_default", name: "Main resume", text: (resumeData && resumeData.text) || "", result: (resumeData && resumeData.result) || null }]);
+          setActiveResumeId("v_default");
+        }
         setInterviewData(interviewsData || {});
         setLearning({ ...DEFAULT_LEARNING, ...(learningData || {}) });
         setProfile({ ...DEFAULT_PROFILE, ...(profileData || {}) });
@@ -1938,11 +2222,31 @@ function MainApp({ username, onLogout, toast }) {
     if (!loaded) return;
     (async () => {
       try {
-        const blob = JSON.stringify({ text: resumeText, result: resumeResult });
+        const blob = JSON.stringify({ activeId: activeResumeId, versions: resumeVersions });
         await api("/api/data/resume", { method: "PUT", body: JSON.stringify({ blob }) });
       } catch (e) { toast("error", "Couldn't save your last change."); }
     })();
-  }, [resumeText, resumeResult, loaded]);
+  }, [resumeVersions, activeResumeId, loaded]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    (async () => {
+      try {
+        const blob = JSON.stringify(contacts);
+        await api("/api/data/contacts", { method: "PUT", body: JSON.stringify({ blob }) });
+      } catch (e) { toast("error", "Couldn't save your last change."); }
+    })();
+  }, [contacts, loaded]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    (async () => {
+      try {
+        const blob = JSON.stringify(todos);
+        await api("/api/data/todos", { method: "PUT", body: JSON.stringify({ blob }) });
+      } catch (e) { toast("error", "Couldn't save your last change."); }
+    })();
+  }, [todos, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -2056,10 +2360,12 @@ function MainApp({ username, onLogout, toast }) {
         ) : (
           <div key={activeTab} className="fade-in">
             {activeTab === "tracker" && <TrackerTab jobs={jobs} setJobs={setJobs} onMatchJob={handleMatchJob} toast={toast} />}
-            {activeTab === "scanner" && <ResumeScannerTab resumeText={resumeText} setResumeText={setResumeText} resumeResult={resumeResult} setResumeResult={setResumeResult} toast={toast} />}
+            {activeTab === "scanner" && <ResumeScannerTab resumeText={resumeText} setResumeText={setResumeText} resumeResult={resumeResult} setResumeResult={setResumeResult} versions={resumeVersions} activeId={activeResumeId} onSelectVersion={setActiveResumeId} onCreateVersion={createResumeVersion} onRenameVersion={renameResumeVersion} onDeleteVersion={deleteResumeVersion} toast={toast} />}
+            {activeTab === "todos" && <TodosTab todos={todos} setTodos={setTodos} toast={toast} />}
+            {activeTab === "contacts" && <ContactsTab contacts={contacts} setContacts={setContacts} toast={toast} />}
             {activeTab === "match" && <MatchAnalyzerTab resumeText={resumeText} setResumeText={setResumeText} prefill={matchPrefill} toast={toast} />}
             {activeTab === "prep" && <InterviewPrepSection jobs={jobs} interviewData={interviewData} setInterviewData={setInterviewData} learning={learning} setLearning={setLearning} toast={toast} />}
-            {activeTab === "profile" && <ProfileTab username={username} jobs={jobs} resumeText={resumeText} resumeResult={resumeResult} interviewData={interviewData} learning={learning} profile={profile} setProfile={setProfile} documents={documents} setDocuments={setDocuments} onLogout={onLogout} toast={toast} />}
+            {activeTab === "profile" && <ProfileTab username={username} jobs={jobs} contacts={contacts} todos={todos} resumeVersions={resumeVersions} resumeText={resumeText} resumeResult={resumeResult} interviewData={interviewData} learning={learning} profile={profile} setProfile={setProfile} documents={documents} setDocuments={setDocuments} onLogout={onLogout} toast={toast} />}
           </div>
         )}
       </main>
@@ -2068,10 +2374,59 @@ function MainApp({ username, onLogout, toast }) {
 }
 
 /* ============================== ROOT ============================== */
+/* ============================== RESET PASSWORD (from email link) ============================== */
+function ResetPasswordScreen({ token, onDone, toast }) {
+  const [pw, setPw] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (pw.length < 6) { setError("Use at least 6 characters."); return; }
+    if (pw !== confirm) { setError("Passwords don't match."); return; }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, newPassword: pw }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Reset failed."); setBusy(false); return; }
+      toast("success", data.message || "Password reset -- log in now.");
+      onDone();
+    } catch (err) {
+      setError("Couldn't reach the server.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="jshq min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <Icon name="lock" size={22} className="text-brass mx-auto mb-2" />
+          <h1 className="jshq-display text-xl text-paper">Set a new password</h1>
+        </div>
+        <form onSubmit={submit} className="bg-ink2 border border-hair rounded-lg p-5 space-y-3">
+          <input type="password" autoFocus value={pw} onChange={(e) => setPw(e.target.value)} className="w-full rounded px-3 py-2 text-sm focus-ring" placeholder="New password (6+ characters)" />
+          <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="w-full rounded px-3 py-2 text-sm focus-ring" placeholder="Confirm new password" />
+          {error && <p className="text-xs text-rust">{error}</p>}
+          <button type="submit" disabled={busy || !pw || !confirm} className="btn-primary w-full rounded px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 focus-ring">
+            {busy && <Icon name="loader" size={15} spin />} Reset password
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function Root() {
   const [phase, setPhase] = useState("checking");
   const [username, setUsername] = useState(null);
   const [toasts, setToasts] = useState([]);
+  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get("reset"));
 
   const toast = useCallback((type, message) => {
     const id = Date.now() + Math.random();
@@ -2080,7 +2435,10 @@ function Root() {
   }, []);
   const removeToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
 
+  const [checkAttempt, setCheckAttempt] = useState(0);
+
   useEffect(() => {
+    if (resetToken) { setPhase("resetPassword"); return; }
     (async () => {
       const token = getToken();
       if (!token) { setPhase("loggedOut"); return; }
@@ -2090,15 +2448,20 @@ function Root() {
           const data = await res.json();
           setUsername(data.username);
           setPhase("loggedIn");
-        } else {
+        } else if (res.status === 401) {
+          // Token genuinely invalid/expired -- a real logout is correct here.
           clearSession();
           setPhase("loggedOut");
+        } else {
+          // Server hiccup (e.g. mid-deployment): session is still valid,
+          // so don't dump to login -- offer a retry instead.
+          setPhase("authError");
         }
       } catch (e) {
-        setPhase("loggedOut");
+        setPhase("authError");
       }
     })();
-  }, []);
+  }, [checkAttempt]);
 
   const handleAuthed = (uname) => { setUsername(uname); setPhase("loggedIn"); };
   const handleGoogleResult = (data) => { setUsername(data.username); setPhase("loggedIn"); };
@@ -2113,8 +2476,25 @@ function Root() {
     return <div className="jshq min-h-screen flex items-center justify-center"><Icon name="loader" size={20} spin /></div>;
   }
 
+  if (phase === "authError") {
+    return (
+      <div className="jshq min-h-screen flex items-center justify-center p-4">
+        <div className="text-center max-w-sm">
+          <Icon name="info" size={24} className="text-rust mx-auto mb-3" />
+          <h2 className="jshq-display text-lg text-paper">Couldn't reach the server</h2>
+          <p className="text-muted text-sm mt-1 mb-4">You're still logged in -- this usually clears up in a minute (often right after a new deployment).</p>
+          <div className="flex justify-center gap-2">
+            <button onClick={() => { setPhase("checking"); setCheckAttempt((n) => n + 1); }} className="btn-primary rounded px-4 py-2 text-sm font-medium focus-ring">Retry</button>
+            <button onClick={() => { clearSession(); setPhase("loggedOut"); }} className="btn-ghost rounded px-4 py-2 text-sm focus-ring">Log in again</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
+      {phase === "resetPassword" && <ResetPasswordScreen token={resetToken} onDone={() => { window.history.replaceState({}, "", window.location.pathname); setResetToken(null); setPhase("loggedOut"); }} toast={toast} />}
       {phase === "loggedOut" && <AuthScreen onAuthed={handleAuthed} onGoogleResult={handleGoogleResult} toast={toast} />}
       {phase === "loggedIn" && <MainApp username={username} onLogout={handleLogout} toast={toast} />}
       <ToastStack toasts={toasts} remove={removeToast} />
