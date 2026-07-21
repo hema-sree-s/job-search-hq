@@ -113,14 +113,14 @@ const clearSession = () => sessionStorage.removeItem(TOKEN_KEY);
 // encrypted version of this app can't be read anymore -- they're detected by
 // shape and treated as empty so the app starts cleanly instead of crashing.
 function parseBlob(blob, fallback) {
-  if (!blob || typeof blob !== "string") return fallback;
-  try {
-    const v = JSON.parse(blob);
-    if (v && typeof v === "object" && typeof v.iv === "string" && typeof v.data === "string") return fallback;
-    return v === null || v === undefined ? fallback : v;
-  } catch (e) {
-    return fallback;
+  if (blob === null || blob === undefined || blob === "") return fallback;
+  let v = blob;
+  if (typeof blob === "string") {
+    try { v = JSON.parse(blob); } catch (e) { return fallback; }
   }
+  // Legacy encrypted-era blobs ({iv, data}) are unreadable -> treat as empty.
+  if (v && typeof v === "object" && typeof v.iv === "string" && typeof v.data === "string") return fallback;
+  return v === null || v === undefined ? fallback : v;
 }
 
 async function api(path, opts = {}) {
