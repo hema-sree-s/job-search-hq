@@ -193,7 +193,60 @@ function guessProfileFromResume(text) {
     return re.test(lower);
   });
 
-  return { headline, bio, skills };
+  // ---- Section-based parsing for experience / education / certifications ----
+  const HEADING_RE = /^(professional experience|work experience|experience|employment( history)?|education|certifications?|licenses?( & certifications?)?|skills|technical skills|projects|summary|objective|profile)\b/i;
+  const sectionOf = (h) => {
+    const t = h.toLowerCase();
+    if (/certif|licen/.test(t)) return "certs";
+    if (/education/.test(t)) return "education";
+    if (/experience|employment/.test(t)) return "experience";
+    return "other";
+  };
+  const sections = { experience: [], education: [], certs: [] };
+  let current = "other";
+  for (const line of lines) {
+    const stripped = line.replace(/[:\s]+$/, "");
+    if (stripped.length <= 40 && HEADING_RE.test(stripped)) { current = sectionOf(stripped); continue; }
+    if (sections[current]) sections[current].push(line);
+  }
+
+  const DATE_RE = /((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d{4}|\d{4})\s*[-–—to]+\s*((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d{4}|\d{4}|present|current)/i;
+
+  const experience = [];
+  for (const line of sections.experience) {
+    const m = line.match(DATE_RE);
+    if (m && !/^[-•*▪◦]/.test(line)) {
+      const dates = m[0];
+      const rest = line.replace(m[0], "").replace(/[|,–—-]+\s*$/, "").replace(/^\s*[|,–—-]+/, "").trim();
+      const parts = rest.split(/\s*[|·]\s*/).map((s) => s.trim()).filter(Boolean);
+      experience.push({ title: parts[0] || rest || "Role", company: parts[1] || "", dates });
+      if (experience.length >= 6) break;
+    }
+  }
+
+  const DEGREE_RE = /\b(bachelor|master|b\.?s\.?c?|m\.?s\.?c?|b\.?tech|m\.?tech|b\.?e\.?|m\.?e\.?|ph\.?d|mba|associate|diploma)\b/i;
+  const education = [];
+  const eduSource = sections.education.length ? sections.education : lines;
+  for (let i = 0; i < eduSource.length; i++) {
+    const line = eduSource[i];
+    if (DEGREE_RE.test(line)) {
+      const dm = line.match(DATE_RE) || line.match(/\b(19|20)\d{2}\b/);
+      const school = /universit|college|institute|school/i.test(line) ? "" : ((eduSource[i + 1] && /universit|college|institute|school/i.test(eduSource[i + 1])) ? eduSource[i + 1].split(/\s*[|·]\s*/)[0].trim() : "");
+      education.push({ degree: line.replace(DATE_RE, "").replace(/[|,–—-]+\s*$/, "").trim().slice(0, 90), school: school.slice(0, 70), dates: dm ? dm[0] : "" });
+      if (education.length >= 4) break;
+    }
+  }
+
+  const certifications = [];
+  for (const line of sections.certs) {
+    const name = line.replace(/^[-•*▪◦\s]+/, "").trim();
+    if (name && name.length >= 4 && name.length <= 110) {
+      certifications.push({ name: name.slice(0, 100), issuer: "" });
+      if (certifications.length >= 8) break;
+    }
+  }
+
+  return { headline, bio, skills, experience, education, certifications };
 }
 
 function analyzeResume(text) {
@@ -361,6 +414,35 @@ function UploadPdfButton({ onExtracted, toast, label = "Upload PDF" }) {
       {busy ? <Icon name="loader" size={16} spin /> : <Icon name="clipboard" size={16} />} {busy ? "Reading..." : label}
       <input ref={fileInputRef} type="file" accept="application/pdf" onChange={handleFile} className="hidden" disabled={busy} />
     </label>
+  );
+}
+
+function Avatar({ avatar, username, size = 56, fontSize }) {
+  return (
+    <div className="rounded-full flex items-center justify-center jshq-mono avatar-grad shrink-0"
+      style={{ width: size, height: size, fontSize: fontSize || (avatar ? size * 0.55 : size * 0.34) }}>
+      {avatar || initials(username)}
+    </div>
+  );
+}
+
+function Logo({ size = 28 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="Job Search HQ logo">
+      <defs>
+        <linearGradient id="jshqlg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#B9A0EA" /><stop offset="1" stopColor="#8C93B8" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="15" fill="url(#jshqlg)" />
+      {/* briefcase */}
+      <rect x="14" y="26" width="36" height="22" rx="4" fill="#FFFFFF" />
+      <path d="M26 26 v-4 a3 3 0 0 1 3-3 h6 a3 3 0 0 1 3 3 v4" fill="none" stroke="#FFFFFF" strokeWidth="3.4" strokeLinecap="round" />
+      <rect x="14" y="34" width="36" height="2.6" fill="#B9A0EA" opacity="0.55" />
+      {/* upward arrow = career trajectory */}
+      <path d="M22 44 L31 37 L36 40.5 L43 32" fill="none" stroke="#8C6FD1" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M43 32 l-6 0.8 M43 32 l-0.8 6" fill="none" stroke="#8C6FD1" strokeWidth="3.4" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -1199,6 +1281,9 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
   const [skillInput, setSkillInput] = useState("");
   const [uploading, setUploading] = useState(false);
   const [autofilling, setAutofilling] = useState(false);
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [expForm, setExpForm] = useState({ title: "", company: "", dates: "" });
+  const [eduForm, setEduForm] = useState({ degree: "", school: "", dates: "" });
   const fileInputRef = useRef(null);
 
   useEffect(() => { setHeadline(profile.headline); setBio(profile.bio); }, [profile.headline, profile.bio]);
@@ -1232,11 +1317,22 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
       for (const s of guessed.skills || []) {
         if (!mergedSkills.some((x) => x.toLowerCase() === s.toLowerCase())) mergedSkills.push(s);
       }
+      const mergeList = (existing, incoming, keyOf) => {
+        const out = [...(existing || [])];
+        for (const item of incoming || []) {
+          const k = keyOf(item).toLowerCase().trim();
+          if (k && !out.some((x) => keyOf(x).toLowerCase().trim() === k)) out.push(item);
+        }
+        return out;
+      };
       return {
         ...p,
         headline: p.headline || guessed.headline || p.headline,
         bio: p.bio || guessed.bio || p.bio,
         skills: mergedSkills,
+        experience: mergeList(p.experience, guessed.experience, (x) => `${x.title || ""}@${x.company || ""}`),
+        education: mergeList(p.education, guessed.education, (x) => x.degree || ""),
+        certifications: mergeList(p.certifications, guessed.certifications, (x) => x.name || ""),
       };
     });
   };
@@ -1374,7 +1470,24 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
           </label>
         </div>
         <div className="flex items-start gap-4 pt-4 border-t border-hair">
-          <div className="w-14 h-14 rounded-full flex items-center justify-center jshq-mono avatar-grad text-lg shrink-0">{initials(username)}</div>
+          <div className="shrink-0">
+            <button type="button" onClick={() => setShowAvatarPicker((v) => !v)} className="focus-ring rounded-full" title="Change avatar">
+              <Avatar avatar={profile.avatar} username={username} size={56} />
+            </button>
+            {showAvatarPicker && (
+              <div className="absolute z-20 mt-2 bg-ink2 border border-hair rounded-lg p-3 shadow-lg" style={{ maxWidth: 232 }}>
+                <p className="text-xs text-muted mb-2">Pick an avatar</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {AVATAR_CHOICES.map((a) => (
+                    <button key={a} type="button" onClick={() => { setProfile((p) => ({ ...p, avatar: a })); setShowAvatarPicker(false); }}
+                      className="w-9 h-9 rounded-md flex items-center justify-center text-xl hover:bg-ink3 focus-ring">{a}</button>
+                  ))}
+                </div>
+                <button type="button" onClick={() => { setProfile((p) => ({ ...p, avatar: "" })); setShowAvatarPicker(false); }}
+                  className="text-xs text-muted hover:text-main mt-2">Use my initials instead</button>
+              </div>
+            )}
+          </div>
           <div className="min-w-0 flex-1">
             <h3 className="jshq-display text-lg text-paper">{username}</h3>
             {!editing ? (
@@ -1423,12 +1536,71 @@ function ProfileTab({ username, jobs, resumeText, resumeResult, learning, profil
         ))}
       </div>
 
+      {/* Experience */}
+      <div className="bg-ink2 border border-hair rounded-lg p-5">
+        <p className="text-sm font-medium text-paper mb-3 flex items-center gap-1.5"><Icon name="briefcase" size={15} className="text-brass" /> Experience</p>
+        {(profile.experience || []).length === 0 && <p className="text-xs text-muted italic mb-2">Nothing yet -- autofill from a resume above, or add below.</p>}
+        <div className="space-y-2 mb-3">
+          {(profile.experience || []).map((x, i) => (
+            <div key={i} className="flex items-start justify-between gap-2 border-b border-hair pb-2 last:border-0 last:pb-0">
+              <div className="min-w-0">
+                <p className="text-sm text-paper">{x.title}{x.company ? <span className="text-muted"> · {x.company}</span> : null}</p>
+                {x.dates && <p className="text-xs text-muted">{x.dates}</p>}
+              </div>
+              <button onClick={() => setProfile((p) => ({ ...p, experience: p.experience.filter((_, j) => j !== i) }))} className="text-muted hover:text-rust shrink-0" aria-label="Remove"><Icon name="x" size={13} /></button>
+            </div>
+          ))}
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); if (!expForm.title.trim()) return; setProfile((p) => ({ ...p, experience: [...(p.experience || []), { title: expForm.title.trim(), company: expForm.company.trim(), dates: expForm.dates.trim() }] })); setExpForm({ title: "", company: "", dates: "" }); }} className="flex flex-wrap gap-2">
+          <input value={expForm.title} onChange={(e) => setExpForm((f) => ({ ...f, title: e.target.value }))} className="flex-1 min-w-32 rounded px-3 py-1.5 text-sm focus-ring" placeholder="Title" />
+          <input value={expForm.company} onChange={(e) => setExpForm((f) => ({ ...f, company: e.target.value }))} className="flex-1 min-w-32 rounded px-3 py-1.5 text-sm focus-ring" placeholder="Company" />
+          <input value={expForm.dates} onChange={(e) => setExpForm((f) => ({ ...f, dates: e.target.value }))} className="w-36 rounded px-3 py-1.5 text-sm focus-ring" placeholder="Jan 2025 - Present" />
+          <button type="submit" disabled={!expForm.title.trim()} className="btn-ghost rounded px-3 py-1.5 text-sm focus-ring"><Icon name="plus" size={15} /></button>
+        </form>
+      </div>
+
+      {/* Education */}
+      <div className="bg-ink2 border border-hair rounded-lg p-5">
+        <p className="text-sm font-medium text-paper mb-3 flex items-center gap-1.5"><Icon name="clipboard" size={15} className="text-brass" /> Education</p>
+        {(profile.education || []).length === 0 && <p className="text-xs text-muted italic mb-2">Nothing yet -- autofill from a resume above, or add below.</p>}
+        <div className="space-y-2 mb-3">
+          {(profile.education || []).map((x, i) => (
+            <div key={i} className="flex items-start justify-between gap-2 border-b border-hair pb-2 last:border-0 last:pb-0">
+              <div className="min-w-0">
+                <p className="text-sm text-paper">{x.degree}</p>
+                <p className="text-xs text-muted">{[x.school, x.dates].filter(Boolean).join(" · ")}</p>
+              </div>
+              <button onClick={() => setProfile((p) => ({ ...p, education: p.education.filter((_, j) => j !== i) }))} className="text-muted hover:text-rust shrink-0" aria-label="Remove"><Icon name="x" size={13} /></button>
+            </div>
+          ))}
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); if (!eduForm.degree.trim()) return; setProfile((p) => ({ ...p, education: [...(p.education || []), { degree: eduForm.degree.trim(), school: eduForm.school.trim(), dates: eduForm.dates.trim() }] })); setEduForm({ degree: "", school: "", dates: "" }); }} className="flex flex-wrap gap-2">
+          <input value={eduForm.degree} onChange={(e) => setEduForm((f) => ({ ...f, degree: e.target.value }))} className="flex-1 min-w-32 rounded px-3 py-1.5 text-sm focus-ring" placeholder="Degree" />
+          <input value={eduForm.school} onChange={(e) => setEduForm((f) => ({ ...f, school: e.target.value }))} className="flex-1 min-w-32 rounded px-3 py-1.5 text-sm focus-ring" placeholder="School" />
+          <input value={eduForm.dates} onChange={(e) => setEduForm((f) => ({ ...f, dates: e.target.value }))} className="w-28 rounded px-3 py-1.5 text-sm focus-ring" placeholder="2021 - 2023" />
+          <button type="submit" disabled={!eduForm.degree.trim()} className="btn-ghost rounded px-3 py-1.5 text-sm focus-ring"><Icon name="plus" size={15} /></button>
+        </form>
+      </div>
+
       {/* Certifications rollup, mirrors Learning & Certs data */}
       <div className="bg-ink2 border border-hair rounded-lg p-5">
         <p className="text-sm font-medium text-paper mb-3 flex items-center gap-1.5"><Icon name="award" size={15} className="text-green" /> Licenses & certifications</p>
-        {completedCerts.length === 0 ? (
-          <p className="text-xs text-muted italic">None yet -- mark certifications complete in Interview Prep → Learning & Certs and they'll show up here.</p>
-        ) : (
+        {(profile.certifications || []).length > 0 && (
+          <div className="space-y-2 mb-3">
+            {(profile.certifications || []).map((cert, i) => (
+              <div key={i} className="flex items-start justify-between gap-2 border-b border-hair pb-2 last:border-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="text-sm text-paper truncate">{cert.name}</p>
+                  {cert.issuer && <p className="text-xs text-muted">{cert.issuer}</p>}
+                </div>
+                <button onClick={() => setProfile((p) => ({ ...p, certifications: p.certifications.filter((_, j) => j !== i) }))} className="text-muted hover:text-rust shrink-0" aria-label="Remove"><Icon name="x" size={13} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        {completedCerts.length === 0 && (profile.certifications || []).length === 0 ? (
+          <p className="text-xs text-muted italic">None yet -- autofill from a resume above, or mark certifications complete in Interview Prep → Learning & Certs.</p>
+        ) : completedCerts.length === 0 ? null : (
           <div className="space-y-2">
             {completedCerts.map((c) => (
               <div key={c.id} className="flex items-start justify-between gap-2 border-b border-hair pb-2 last:border-0 last:pb-0">
@@ -1492,7 +1664,8 @@ const TABS = [
 ];
 
 const DEFAULT_LEARNING = { targetRole: "", topics: [], certifications: [], summary: "" };
-const DEFAULT_PROFILE = { headline: "", bio: "", skills: [] };
+const DEFAULT_PROFILE = { headline: "", bio: "", skills: [], avatar: "", experience: [], education: [], certifications: [] };
+const AVATAR_CHOICES = ["🦊", "🐼", "🐨", "🐱", "🐶", "🦉", "🐧", "🐢", "🦁", "🐸", "🧑‍💻", "👩‍💼", "🧑‍🚀", "🧑‍🎨", "🥷", "🤖"];
 
 function MainApp({ username, onLogout, toast }) {
   const [activeTab, setActiveTab] = useState("tracker");
@@ -1604,9 +1777,12 @@ function MainApp({ username, onLogout, toast }) {
   return (
     <div className="jshq min-h-screen w-full flex flex-col sm:flex-row">
       <aside className="hidden sm:flex flex-col bg-ink2 border-r border-hair p-4" style={{ width: 224, flexShrink: 0 }}>
-        <div className="mb-6 px-2">
-          <p className="jshq-mono text-brass tracking-widest" style={{ fontSize: 10 }}>ENCRYPTED · MULTI-USER</p>
-          <h1 className="jshq-display text-lg text-paper leading-tight mt-0.5">Job Search HQ</h1>
+        <div className="mb-6 px-2 flex items-center gap-2.5">
+          <Logo size={34} />
+          <div>
+            <h1 className="jshq-display text-lg text-paper leading-tight">Job Search HQ</h1>
+            <p className="jshq-mono text-brass tracking-widest" style={{ fontSize: 9 }}>CAREER COMMAND CENTER</p>
+          </div>
         </div>
         <nav className="flex flex-col gap-1">
           {TABS.map((t) => (
@@ -1617,7 +1793,7 @@ function MainApp({ username, onLogout, toast }) {
         </nav>
         <div className="mt-auto pt-4 px-2 border-t border-hair">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-6 h-6 rounded-full flex items-center justify-center jshq-mono avatar-grad" style={{ fontSize: 10 }}>{initials(username)}</div>
+            <Avatar avatar={profile.avatar} username={username} size={24} fontSize={profile.avatar ? 14 : 10} />
             <span className="text-xs text-main truncate">{username}</span>
           </div>
           <button onClick={onLogout} className="text-xs text-muted hover:text-rust flex items-center gap-1.5"><Icon name="logout" size={13} /> Log out</button>
@@ -1626,8 +1802,8 @@ function MainApp({ username, onLogout, toast }) {
 
       <div className="sm:hidden bg-ink2 border-b border-hair px-4 py-3">
         <div className="flex items-center justify-between">
-          <div>
-            <p className="jshq-mono text-brass tracking-widest" style={{ fontSize: 10 }}>ENCRYPTED · MULTI-USER</p>
+          <div className="flex items-center gap-2">
+            <Logo size={28} />
             <h1 className="jshq-display text-lg text-paper leading-tight">Job Search HQ</h1>
           </div>
           <button onClick={onLogout} className="text-muted hover:text-rust"><Icon name="logout" size={16} /></button>
