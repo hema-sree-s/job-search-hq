@@ -557,19 +557,38 @@ function UnlockScreen({ username, salt, onUnlocked, onLogout, toast }) {
     setBusy(true);
     try {
       const key = await CRYPTO_HELPERS.deriveKey(password, salt);
+
+      // Deliberately NOT using the api() helper here: we want full control to
+      // report the exact failure instead of auto-clearing the session.
+      const token = getToken();
+      if (!token) {
+        setError("No session token exists in this browser right now (it was cleared or never saved). Click 'Log out' below and log in again.");
+        setBusy(false);
+        return;
+      }
+
       let res;
       try {
-        res = await api("/api/data/jobs");
+        res = await fetch("/api/data/jobs", { headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" } });
       } catch (networkErr) {
-        setError("Couldn't reach the server. Check your connection and try again.");
+        setError("The request could not reach the server at all (network-level failure).");
+        setBusy(false);
+        return;
+      }
+
+      if (res.status === 401) {
+        let body = null;
+        try { body = await res.json(); } catch (e2) { /* ignore */ }
+        setError(`The server rejected the session: ${body && body.reason ? body.reason : "no reason given"}. Click 'Log out' below and log in again.`);
         setBusy(false);
         return;
       }
       if (!res.ok) {
-        setError(`Server error (${res.status}) while checking your passphrase. This usually means the deployment is out of date, not that your passphrase is wrong.`);
+        setError(`Server error (${res.status}) while checking your passphrase.`);
         setBusy(false);
         return;
       }
+
       let blob;
       try {
         ({ blob } = await res.json());
