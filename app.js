@@ -898,9 +898,34 @@ function TrackerTab({ jobs, setJobs, onMatchJob, toast }) {
 }
 
 /* ============================== RESUME SCANNER TAB ============================== */
-function ResumeScannerTab({ resumeText, setResumeText, resumeResult, setResumeResult, toast }) {
+function ResumeScannerTab({ resumeText, setResumeText, resumeResult, setResumeResult, versions, activeId, onSelectVersion, onCreateVersion, onRenameVersion, onDeleteVersion, toast }) {
   const [scanning, setScanning] = useState(false);
   const [ai, setAi] = useState({ status: "idle", data: null, error: null });
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState("");
+  const safeVersions = Array.isArray(versions) && versions.length ? versions : [{ id: "v_default", name: "Main resume", text: "", result: null }];
+  const activeVersion = safeVersions.find((v) => v.id === activeId) || safeVersions[0];
+
+  const versionBar = (
+    <div className="flex flex-wrap items-center gap-2 mb-3">
+      <select value={activeVersion.id} onChange={(e) => { setAi({ status: "idle", data: null, error: null }); onSelectVersion(e.target.value); }} className="rounded text-sm py-1.5 px-2.5 focus-ring" style={{ maxWidth: 220 }}>
+        {safeVersions.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+      </select>
+      {renaming ? (
+        <form onSubmit={(e) => { e.preventDefault(); if (renameVal.trim()) onRenameVersion(activeVersion.id, renameVal.trim()); setRenaming(false); }} className="flex gap-1.5">
+          <input autoFocus value={renameVal} onChange={(e) => setRenameVal(e.target.value)} className="rounded px-2.5 py-1.5 text-sm focus-ring" placeholder="New name" style={{ width: 160 }} />
+          <button type="submit" className="btn-ghost rounded px-2.5 py-1.5 text-xs focus-ring">Save</button>
+        </form>
+      ) : (
+        <button onClick={() => { setRenameVal(activeVersion.name); setRenaming(true); }} className="btn-ghost rounded px-2.5 py-1.5 text-xs focus-ring">Rename</button>
+      )}
+      <button onClick={() => onCreateVersion(`Version ${safeVersions.length + 1}`)} className="btn-ghost rounded px-2.5 py-1.5 text-xs focus-ring flex items-center gap-1"><Icon name="plus" size={12} /> New version</button>
+      {safeVersions.length > 1 && (
+        <button onClick={() => { if (window.confirm(`Delete "${activeVersion.name}"? Its text and score are removed.`)) onDeleteVersion(activeVersion.id); }} className="rounded px-2.5 py-1.5 text-xs focus-ring" style={{ border: "1px solid #F3C9C0", color: "#D97862" }}>Delete</button>
+      )}
+      <span className="text-xs text-muted">Keep tailored versions per role -- each has its own text and score.</span>
+    </div>
+  );
 
   const scan = () => {
     if (!resumeText.trim()) return;
