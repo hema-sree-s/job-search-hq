@@ -32,6 +32,19 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
+    if (req.method === "DELETE") {
+      await redis.del(key);
+      return res.status(200).json({ ok: true });
+    }
+
+    // Used by "Forgot passphrase? Reset my data" -- deletes this user's
+    // encrypted blob so they can start fresh with a new passphrase. Only ever
+    // affects the authenticated user's own data.
+    if (req.method === "DELETE") {
+      await redis.del(key);
+      return res.status(200).json({ ok: true });
+    }
+
     res.status(405).json({ error: "Method not allowed" });
   } catch (e) {
     res.status(500).json({ error: e.message || "Server error" });
