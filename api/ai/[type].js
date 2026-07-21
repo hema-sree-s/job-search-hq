@@ -19,7 +19,7 @@ function learningSuggestionsPrompt(body) {
 
 function profileSuggestionsPrompt(body) {
   const { resumeText } = body || {};
-  return `You are a career coach helping someone write a professional profile summary from their resume. Return ONLY valid JSON (no markdown fences): {"headline": "a punchy 3-8 word professional headline based on their most recent/prominent role", "bio": "a 2-3 sentence first-person professional summary", "skills": ["skill", "..."]}. Include at most 10 of their most relevant, specific skills (real tools/technologies/methods mentioned or clearly implied, not generic filler). Resume:\n\n${String(resumeText || "").slice(0, 6000)}`;
+  return `You are a career coach turning a resume into a structured professional profile. Return ONLY valid JSON (no markdown fences) with this exact shape: {"headline": "3-8 word professional headline from their most recent/prominent role", "bio": "2-3 sentence first-person professional summary", "skills": ["skill", "..."], "experience": [{"title": "job title", "company": "company name", "dates": "e.g. Jan 2025 - Present"}], "education": [{"degree": "degree name and field", "school": "institution", "dates": "years"}], "certifications": [{"name": "certification name", "issuer": "issuing organization"}]}. Include at most 10 specific skills, every job in the resume (most recent first), all education entries, and all certifications mentioned anywhere in the resume. Use empty arrays for anything not present. Resume:\n\n${String(resumeText || "").slice(0, 6000)}`;
 }
 
 const PROMPT_BUILDERS = {
@@ -30,6 +30,7 @@ const PROMPT_BUILDERS = {
 };
 
 module.exports = async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const payload = verifyAuth(req);
   if (!payload) return res.status(401).json({ error: "Not authenticated" });
