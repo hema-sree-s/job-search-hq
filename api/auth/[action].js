@@ -27,10 +27,37 @@ async function handleSignup(req, res) {
   const passwordHash = await bcrypt.hash(password, 10);
 
   await redis.set(usernameKey, id);
-  await setJSON(redis, `user:${id}`, { id, username: uname, passwordHash, email: (typeof email === "string" && email.includes("@")) ? email.trim() : null, salt: typeof salt === "string" ? salt : "" });
-  await redis.sadd("users:index", id);
+  await setJSON(redis, `user:${id}`, {
+    id, username: uname, passwordHash,
+    email: (typeof email === "string" && email.includes("@")) ? email.trim() : null,
+    salt: typeof salt === "string" ? salt : "",
+    status: "pending",   // "pending" | "active"
+  });
+  // NOTE: do NOT add to users:index yet -- pending users can't log in and
+  // shouldn't receive digest emails until an admin approves them.
 
-  res.status(200).json({ token: signToken(id, uname), username: uname, salt });
+  // Email the admin so they can approve or reject.
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.GMAIL_USER;
+  if (adminEmail) {
+    const origin = `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
+    const approveLink = `${origin}/api/auth/admin?action=approve&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
+    const rejectLink  = `${origin}/api/auth/admin?action=reject&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
+    const { sendEmail } = require("../../lib/email");
+    await sendEmail({
+      to: adminEmail,
+      subject: `New signup request: ${uname}`,
+      html: `<p>Someone wants to join Job Search HQ.</p>
+             <p><b>Username:</b> ${uname}<br>
+             <b>Email:</b> ${(typeof email === "string" && email.includes("@")) ? email.trim() : "(none provided)"}</p>
+             <p>
+               <a href="${approveLink}" style="background:#B9A0EA;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-right:8px">✓ Approve</a>
+               <a href="${rejectLink}" style="background:#D97862;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">✗ Reject</a>
+             </p>
+             <p style="font-size:12px;color:#999">Approve link activates the account. Reject permanently deletes it.</p>`,
+    }).catch((e) => console.log("[signup-notify] email failed:", e.message));
+  }
+
+  res.status(200).json({ pending: true, message: "Your account request has been sent. You'll be able to log in once an admin approves it -- this usually takes less than a day." });
 }
 
 async function handleLogin(req, res) {
@@ -42,6 +69,9 @@ async function handleLogin(req, res) {
 
   const user = await getJSON(redis, `user:${userId}`);
   if (!user) return res.status(401).json({ error: "Invalid username or password." });
+  if (user.status === "pending") {
+    return res.status(403).json({ error: "Your account is pending admin approval. You'll receive an email when it's approved." });
+  }
   if (!user.passwordHash) {
     return res.status(401).json({ error: "This account uses Google Sign-In -- click \"Continue with Google\" instead of logging in with a password." });
   }
@@ -254,6 +284,74 @@ async function handleDeleteAccount(req, res) {
   res.status(200).json({ ok: true });
 }
 
+async function handleAdmin(req, res) {
+  // Admin secret protects these actions. Set ADMIN_SECRET in Vercel env vars.
+  // The approve/reject links in signup emails include it automatically.
+  const secret = process.env.ADMIN_SECRET;
+  const provided = req.query.secret || (req.body && req.body.secret);
+  if (secret && provided !== secret) {
+    return res.status(401).json({ error: "Unauthorized -- wrong admin secret." });
+  }
+  if (!secret) {
+    return res.status(500).json({ error: "ADMIN_SECRET env var is not set. Add it in Vercel env vars and redeploy." });
+  }
+
+  const redis = getRedis();
+  const { action: adminAction, userId } = req.query;
+
+  // List all users (for the admin panel in the app)
+  if (adminAction === "list") {
+    const ids = (await redis.smembers("users:all")) || [];
+    // Also find pending users (not in users:all yet)
+    const allKeys = await redis.keys("user:u_*");
+    const allIds = [...new Set([...ids, ...allKeys.map((k) => k.replace("user:", ""))])];
+    const users = (await Promise.all(allIds.map((id) => getJSON(redis, `user:${id}`)))).filter(Boolean);
+    return res.status(200).json({
+      users: users.map((u) => ({
+        id: u.id, username: u.username, email: u.email || null,
+        status: u.status || "active", googleId: !!u.googleId,
+      }))
+    });
+  }
+
+  // Approve a pending account
+  if (adminAction === "approve" && userId) {
+    const user = await getJSON(redis, `user:${userId}`);
+    if (!user) return res.status(404).json({ error: "User not found." });
+    user.status = "active";
+    await setJSON(redis, `user:${userId}`, user);
+    await redis.sadd("users:index", userId);
+    const { sendEmail } = require("../../lib/email");
+    if (user.email) {
+      await sendEmail({
+        to: user.email,
+        subject: "Your Job Search HQ account is approved!",
+        html: `<p>Hi ${user.username},</p><p>Your Job Search HQ account has been approved. You can now log in at <a href="https://${req.headers["x-forwarded-host"] || req.headers.host}">Job Search HQ</a>.</p>`,
+      }).catch(() => {});
+    }
+    // Redirect so clicking the email link shows a nice page
+    if (req.method === "GET") return res.redirect(302, `/?approved=1`);
+    return res.status(200).json({ ok: true, message: `${user.username} approved.` });
+  }
+
+  // Reject/delete any account
+  if ((adminAction === "reject" || adminAction === "delete") && userId) {
+    const user = await getJSON(redis, `user:${userId}`);
+    if (!user) return res.status(404).json({ error: "User not found." });
+    // Clean up everything
+    const resources = ["jobs", "resume", "interviews", "learning", "profile", "documents", "contacts", "todos"];
+    for (const r of resources) await redis.del(`blob:${r}:${userId}`);
+    await redis.del(`user:byUsername:${user.username.toLowerCase()}`);
+    if (user.googleId) await redis.del(`user:byGoogleId:${user.googleId}`);
+    await redis.del(`user:${userId}`);
+    await redis.srem("users:index", userId);
+    if (adminAction === "reject" && req.method === "GET") return res.redirect(302, `/?rejected=1`);
+    return res.status(200).json({ ok: true, message: `${user.username} deleted.` });
+  }
+
+  res.status(400).json({ error: "Unknown admin action." });
+}
+
 module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "no-store, must-revalidate");
   const { action } = req.query;
@@ -272,6 +370,7 @@ module.exports = async (req, res) => {
     if (action === "request-reset") return await handleRequestReset(req, res);
     if (action === "reset-password") return await handleResetPassword(req, res);
     if (action === "delete-account") return await handleDeleteAccount(req, res);
+    if (action === "admin") return await handleAdmin(req, res);
     res.status(404).json({ error: "Unknown auth action" });
   } catch (e) {
     res.status(500).json({ error: e.message || "Server error" });
