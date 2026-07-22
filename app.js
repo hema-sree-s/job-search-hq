@@ -2115,7 +2115,7 @@ function AdminPanel({ onClose, toast }) {
   const load = async (s) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/admin?action=list&secret=" + encodeURIComponent(s));
+      const res = await fetch("/api/admin?action=list&secret=" + encodeURIComponent(s));
       const data = await res.json();
       if (!res.ok) { toast("error", data.error || "Access denied -- wrong secret."); setLoading(false); return; }
       setUsers(data.users || []);
@@ -2127,7 +2127,7 @@ function AdminPanel({ onClose, toast }) {
 
   const doAction = async (userId, action) => {
     try {
-      const res = await fetch("/api/auth/admin?action=" + action + "&userId=" + userId + "&secret=" + encodeURIComponent(secret));
+      const res = await fetch("/api/admin?action=" + action + "&userId=" + userId + "&secret=" + encodeURIComponent(secret));
       const data = await res.json();
       if (!res.ok) { toast("error", data.error || "Failed."); return; }
       toast("success", data.message || "Done.");
