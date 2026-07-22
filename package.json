@@ -2,7 +2,7 @@
   "name": "job-search-hq",
   "version": "2.0.0",
   "private": true,
-  "description": "Job Search HQ — multi-user, deployed on Vercel with Upstash Redis storage.",
+  "description": "Job Search HQ \u2014 multi-user, deployed on Vercel with Upstash Redis storage.",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -11,6 +11,7 @@
     "@vercel/blob": "^0.27.1",
     "bcryptjs": "^2.4.3",
     "google-auth-library": "^9.11.0",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.16"
   }
 }
