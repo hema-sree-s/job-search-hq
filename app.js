@@ -2358,8 +2358,10 @@ function MainApp({ username, onLogout, toast }) {
             <span className="text-xs text-main truncate">{username}</span>
           </div>
           <button onClick={onLogout} className="text-xs text-muted hover:text-rust flex items-center gap-1.5"><Icon name="logout" size={13} /> Log out</button>
+          {isAdmin && <button onClick={() => setShowAdmin(true)} className="text-xs text-muted hover:text-brass flex items-center gap-1.5 mt-1"><Icon name="users" size={13} /> Admin panel</button>}
         </div>
       </aside>
+      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} toast={toast} />}
 
       <div className="sm:hidden bg-ink2 border-b border-hair px-4 py-3">
         <div className="flex items-center justify-between">
