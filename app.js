@@ -2267,18 +2267,6 @@ function MainApp({ username, onLogout, toast }) {
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
   const [documents, setDocuments] = useState([]);
   const [matchPrefill, setMatchPrefill] = useState(null);
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/config");
-        const data = await res.json();
-        if (data.adminUsername && data.adminUsername.toLowerCase() === username.toLowerCase()) setIsAdmin(true);
-      } catch (e) { /* fine */ }
-    })();
-  }, [username]);
 
   const handleMatchJob = (job) => {
     setMatchPrefill({ jobDesc: job.jobDesc, at: Date.now() });
@@ -2476,10 +2464,8 @@ function MainApp({ username, onLogout, toast }) {
             <span className="text-xs text-main truncate">{username}</span>
           </div>
           <button onClick={onLogout} className="text-xs text-muted hover:text-rust flex items-center gap-1.5"><Icon name="logout" size={13} /> Log out</button>
-          {isAdmin && <button onClick={() => setShowAdmin(true)} className="text-xs text-muted hover:text-brass flex items-center gap-1.5 mt-1"><Icon name="users" size={13} /> Admin panel</button>}
         </div>
       </aside>
-      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} toast={toast} />}
 
       <div className="sm:hidden bg-ink2 border-b border-hair px-4 py-3">
         <div className="flex items-center justify-between">
@@ -2608,8 +2594,23 @@ function Root() {
     })();
   }, [checkAttempt]);
 
-  const handleAuthed = (uname) => { setUsername(uname); setPhase("loggedIn"); };
-  const handleGoogleResult = (data) => { setUsername(data.username); setPhase("loggedIn"); };
+  const [isAdminAccount, setIsAdminAccount] = useState(false);
+
+  const checkAdmin = async (uname) => {
+    try {
+      const res = await fetch("/api/config");
+      const data = await res.json();
+      if (data.adminUsername && data.adminUsername.toLowerCase() === uname.toLowerCase()) {
+        setIsAdminAccount(true);
+      }
+    } catch (e) { /* fine */ }
+  };
+
+  const handleAuthed = (uname) => { setUsername(uname); checkAdmin(uname); setPhase("loggedIn"); };
+  const handleGoogleResult = (data) => {
+    if (data.pending) { toast("info", data.message || "Account pending approval."); return; }
+    setUsername(data.username); checkAdmin(data.username); setPhase("loggedIn");
+  };
   const handleLogout = () => {
     clearSession();
     setUsername(null);
@@ -2641,7 +2642,10 @@ function Root() {
     <>
       {phase === "resetPassword" && <ResetPasswordScreen token={resetToken} onDone={() => { window.history.replaceState({}, "", window.location.pathname); setResetToken(null); setPhase("loggedOut"); }} toast={toast} />}
       {phase === "loggedOut" && <AuthScreen onAuthed={handleAuthed} onGoogleResult={handleGoogleResult} toast={toast} />}
-      {phase === "loggedIn" && <MainApp username={username} onLogout={handleLogout} toast={toast} />}
+      {phase === "loggedIn" && (isAdminAccount
+        ? <AdminApp username={username} onLogout={handleLogout} toast={toast} />
+        : <MainApp username={username} onLogout={handleLogout} toast={toast} />
+      )}
       <ToastStack toasts={toasts} remove={removeToast} />
     </>
   );
