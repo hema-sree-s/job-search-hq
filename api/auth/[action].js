@@ -103,6 +103,7 @@ async function handleGoogle(req, res) {
   let isNewUser = false;
 
   if (!userId) {
+    // New Google user -- create as pending, same as password signup.
     const base = (payload.email || "user").split("@")[0].replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 24) || "user";
     let uname = base;
     let n = 1;
@@ -115,17 +116,46 @@ async function handleGoogle(req, res) {
     await redis.set(googleKey, id);
     await setJSON(redis, `user:${id}`, {
       id, username: uname, googleId: payload.sub, email: payload.email || null,
-      passwordHash: null, salt: typeof salt === "string" ? salt : "",
+      passwordHash: null, salt: "",
+      status: "pending",
     });
-    await redis.sadd("users:index", id);
+    // Do NOT add to users:index yet -- only active accounts go there.
     userId = id;
-    isNewUser = true;
+
+    // Email admin about the new signup request.
+    const adminEmail = process.env.ADMIN_EMAIL || process.env.GMAIL_USER;
+    if (adminEmail) {
+      const { sendEmail } = require("../../lib/email");
+      const origin = `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
+      const approveLink = `${origin}/api/auth/admin?action=approve&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
+      const rejectLink  = `${origin}/api/auth/admin?action=reject&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
+      await sendEmail({
+        to: adminEmail,
+        subject: `New Google signup request: ${uname}`,
+        html: `<p>A Google account wants to join Job Search HQ.</p>
+               <p><b>Username:</b> ${uname}<br><b>Email:</b> ${payload.email || "unknown"}</p>
+               <p>
+                 <a href="${approveLink}" style="background:#B9A0EA;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-right:8px">✓ Approve</a>
+                 <a href="${rejectLink}" style="background:#D97862;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">✗ Reject</a>
+               </p>`,
+      }).catch((e) => console.log("[google-signup-notify] email failed:", e.message));
+    }
+
+    return res.status(200).json({
+      pending: true,
+      message: "Your account request has been sent. You can log in once an admin approves it.",
+    });
   }
 
   const user = await getJSON(redis, `user:${userId}`);
   if (!user) return res.status(500).json({ error: "Account lookup failed." });
 
-  res.status(200).json({ token: signToken(user.id, user.username), username: user.username, salt: user.salt, isNewUser });
+  // Block existing Google users who are still pending.
+  if (user.status === "pending") {
+    return res.status(403).json({ error: "Your account is pending admin approval. You'll be notified when it's approved." });
+  }
+
+  res.status(200).json({ token: signToken(user.id, user.username), username: user.username, salt: user.salt || "" });
 }
 
 async function handleMe(req, res) {
@@ -288,12 +318,23 @@ async function handleAdmin(req, res) {
   // Admin secret protects these actions. Set ADMIN_SECRET in Vercel env vars.
   // The approve/reject links in signup emails include it automatically.
   const secret = process.env.ADMIN_SECRET;
+  const masterKey = process.env.ADMIN_MASTER_KEY; // emergency fallback bypass
   const provided = req.query.secret || (req.body && req.body.secret);
-  if (secret && provided !== secret) {
+
+  const validSecret = secret && provided === secret;
+  const validMaster = masterKey && provided === masterKey;
+
+  if (!validSecret && !validMaster) {
+    if (!secret && !masterKey) {
+      return res.status(500).json({ error: "ADMIN_SECRET env var is not set. Add it in Vercel env vars and redeploy." });
+    }
+    // Log failed attempts to Vercel logs so the admin can see them
+    console.log(`[admin] unauthorized attempt from ${req.headers["x-forwarded-for"] || "unknown"}`);
     return res.status(401).json({ error: "Unauthorized -- wrong admin secret." });
   }
-  if (!secret) {
-    return res.status(500).json({ error: "ADMIN_SECRET env var is not set. Add it in Vercel env vars and redeploy." });
+  if (validMaster && !validSecret) {
+    // Emergency access -- log it so you remember to reset ADMIN_SECRET after
+    console.log("[admin] ACCESS VIA MASTER KEY -- remember to reset ADMIN_SECRET");
   }
 
   const redis = getRedis();
@@ -301,16 +342,33 @@ async function handleAdmin(req, res) {
 
   // List all users (for the admin panel in the app)
   if (adminAction === "list") {
-    const ids = (await redis.smembers("users:all")) || [];
-    // Also find pending users (not in users:all yet)
-    const allKeys = await redis.keys("user:u_*");
-    const allIds = [...new Set([...ids, ...allKeys.map((k) => k.replace("user:", ""))])];
+    // Scan all user keys (pending users aren't in users:index yet)
+    let allIds = [];
+    try {
+      let cursor = 0;
+      do {
+        const [nextCursor, keys] = await redis.scan(cursor, { match: "user:u_*", count: 100 });
+        cursor = parseInt(nextCursor);
+        allIds.push(...keys.map((k) => k.replace("user:", "")));
+      } while (cursor !== 0);
+    } catch (e) {
+      // Fallback if scan not supported: use the index we have
+      allIds = (await redis.smembers("users:index")) || [];
+    }
+    allIds = [...new Set(allIds)];
     const users = (await Promise.all(allIds.map((id) => getJSON(redis, `user:${id}`)))).filter(Boolean);
     return res.status(200).json({
+      adminEmail: process.env.ADMIN_EMAIL || process.env.GMAIL_USER || null,
+      usingMasterKey: validMaster && !validSecret,
       users: users.map((u) => ({
         id: u.id, username: u.username, email: u.email || null,
         status: u.status || "active", googleId: !!u.googleId,
-      }))
+        createdAt: u.id ? u.id.split("_")[1] || null : null,
+      })).sort((a, b) => {
+        if (a.status === "pending" && b.status !== "pending") return -1;
+        if (b.status === "pending" && a.status !== "pending") return 1;
+        return (b.createdAt || 0) - (a.createdAt || 0);
+      })
     });
   }
 
