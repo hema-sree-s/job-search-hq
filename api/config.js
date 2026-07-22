@@ -1,9 +1,12 @@
-// Public, unauthenticated. Only ever exposes things that are safe for the
-// browser to see (a Google OAuth *client* ID is public by design — it's not
-// a secret, the same way an app's App Store ID isn't a secret).
 module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "no-store, must-revalidate");
+  // Derive admin username from ADMIN_EMAIL (everything before @).
+  // Safe to expose -- tells the frontend which account sees the admin UI,
+  // but actual admin actions are protected by ADMIN_SECRET separately.
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.GMAIL_USER || "";
+  const adminUsername = adminEmail ? adminEmail.split("@")[0].toLowerCase() : null;
   res.status(200).json({
     googleClientId: process.env.GOOGLE_CLIENT_ID || null,
+    adminUsername,
   });
 };
