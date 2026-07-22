@@ -2202,6 +2202,135 @@ function AdminPanel({ onClose, toast }) {
   );
 }
 
+function AdminApp({ username, onLogout, toast }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [authed, setAuthed] = useState(false);
+  const [secretInput, setSecretInput] = useState("");
+  const [secret, setSecret] = useState("");
+  const [usingMaster, setUsingMaster] = useState(false);
+
+  const load = async (s) => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin?action=list&secret=" + encodeURIComponent(s));
+      const data = await res.json();
+      if (!res.ok) { toast("error", data.error || "Access denied."); setLoading(false); return; }
+      setUsers(data.users || []);
+      setUsingMaster(!!data.usingMasterKey);
+      setAuthed(true);
+    } catch (e) { toast("error", "Couldn't reach the server."); }
+    setLoading(false);
+  };
+
+  const doAction = async (userId, action) => {
+    try {
+      const res = await fetch("/api/admin?action=" + action + "&userId=" + userId + "&secret=" + encodeURIComponent(secret));
+      const data = await res.json();
+      if (!res.ok) { toast("error", data.error || "Failed."); return; }
+      toast("success", data.message || "Done.");
+      load(secret);
+    } catch (e) { toast("error", "Couldn't reach the server."); }
+  };
+
+  const pending = users.filter((u) => u.status === "pending");
+  const active  = users.filter((u) => u.status !== "pending");
+
+  return (
+    <div className="jshq min-h-screen p-4 sm:p-8">
+      <div className="max-w-2xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Logo size={34} />
+            <div>
+              <h1 className="jshq-display text-xl text-paper">Job Search HQ</h1>
+              <p className="jshq-mono text-brass tracking-widest" style={{ fontSize: 10 }}>ADMIN · {username}</p>
+            </div>
+          </div>
+          <button onClick={onLogout} className="btn-ghost rounded px-3 py-2 text-sm flex items-center gap-1.5 focus-ring">
+            <Icon name="logout" size={14} /> Log out
+          </button>
+        </div>
+
+        {usingMaster && (
+          <div className="rounded-lg px-4 py-3 mb-4 text-sm" style={{ background: "#FBE3DE", border: "1px solid #F3C9C0", color: "#C25A44" }}>
+            Emergency access via ADMIN_MASTER_KEY — reset ADMIN_SECRET and remove ADMIN_MASTER_KEY when done.
+          </div>
+        )}
+
+        {!authed ? (
+          <div className="bg-ink2 border border-hair rounded-lg p-6">
+            <p className="text-sm text-main mb-3">Enter your admin secret to manage accounts.</p>
+            <form onSubmit={(e) => { e.preventDefault(); setSecret(secretInput); load(secretInput); }} className="flex gap-2">
+              <input type="password" value={secretInput} onChange={(e) => setSecretInput(e.target.value)}
+                className="flex-1 rounded px-3 py-2 text-sm focus-ring" placeholder="ADMIN_SECRET (or ADMIN_MASTER_KEY)" autoFocus />
+              <button type="submit" className="btn-primary rounded px-4 py-2 text-sm font-medium focus-ring">Enter</button>
+            </form>
+            <p className="text-xs text-muted mt-2">Forgot ADMIN_SECRET? Add ADMIN_MASTER_KEY in Vercel env vars as a temporary bypass.</p>
+          </div>
+        ) : loading ? (
+          <div className="flex justify-center py-12"><Icon name="loader" size={24} spin /></div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              {[{ label: "Total accounts", value: users.length }, { label: "Pending approval", value: pending.length }, { label: "Active users", value: active.length }].map((s) => (
+                <div key={s.label} className="bg-ink2 border border-hair rounded-lg p-4 text-center">
+                  <p className="jshq-display text-2xl text-paper">{s.value}</p>
+                  <p className="text-xs text-muted mt-0.5">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {pending.length > 0 && (
+              <div className="bg-ink2 border border-hair rounded-lg p-5">
+                <p className="text-sm font-medium text-paper mb-3 flex items-center gap-1.5">
+                  <Icon name="alert" size={15} className="text-amberc" /> Pending approval ({pending.length})
+                </p>
+                <div className="space-y-2">
+                  {pending.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between gap-3 p-3 rounded-lg" style={{ background: "#FDF6EA", border: "1px solid #EBD9B4" }}>
+                      <div>
+                        <p className="text-sm font-medium text-paper">{u.username}</p>
+                        <p className="text-xs text-muted">{u.email || "no email"} · {u.googleId ? "Google" : "Password"}</p>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button onClick={() => doAction(u.id, "approve")} className="btn-primary rounded px-3 py-1.5 text-xs font-medium focus-ring">✓ Approve</button>
+                        <button onClick={() => doAction(u.id, "reject")} className="rounded px-3 py-1.5 text-xs font-medium focus-ring" style={{ border: "1px solid #F3C9C0", color: "#D97862" }}>✗ Reject</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-ink2 border border-hair rounded-lg p-5">
+              <p className="text-sm font-medium text-paper mb-3 flex items-center gap-1.5">
+                <Icon name="users" size={15} className="text-brass" /> Active accounts ({active.length})
+              </p>
+              {active.length === 0 ? <p className="text-xs text-muted italic">No active accounts yet.</p> : (
+                <div className="space-y-2">
+                  {active.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-ink3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-paper">{u.username}</p>
+                        <p className="text-xs text-muted">{u.email || "no email"} · {u.googleId ? "Google" : "Password"} · joined {u.createdAt ? new Date(parseInt(u.createdAt)).toLocaleDateString() : "unknown"}</p>
+                      </div>
+                      <button onClick={() => { if (window.confirm("Permanently delete " + u.username + " and all their data?")) doAction(u.id, "delete"); }}
+                        className="text-xs text-muted hover:text-rust focus-ring rounded px-2 py-1 shrink-0">Delete</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button onClick={() => load(secret)} className="btn-ghost rounded px-4 py-2 text-sm focus-ring w-full">↻ Refresh</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ============================== APP SHELL ============================== */
 const TABS = [
   { key: "tracker", label: "Pipeline", icon: "briefcase" },
