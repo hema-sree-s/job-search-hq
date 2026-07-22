@@ -2267,6 +2267,18 @@ function MainApp({ username, onLogout, toast }) {
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
   const [documents, setDocuments] = useState([]);
   const [matchPrefill, setMatchPrefill] = useState(null);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/config");
+        const data = await res.json();
+        if (data.adminUsername && data.adminUsername.toLowerCase() === username.toLowerCase()) setIsAdmin(true);
+      } catch (e) { /* fine */ }
+    })();
+  }, [username]);
 
   const handleMatchJob = (job) => {
     setMatchPrefill({ jobDesc: job.jobDesc, at: Date.now() });
