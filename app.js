@@ -590,6 +590,12 @@ function AuthScreen({ onAuthed, onGoogleResult, toast }) {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Google sign-in failed."); setBusy(false); return; }
+      if (data.pending) {
+        setInfo(data.message || "Account request sent -- awaiting admin approval.");
+        setBusy(false);
+        return;
+      }
+      if (!data.token) { setError("Sign-in failed -- no session token returned."); setBusy(false); return; }
       setToken(data.token);
       onGoogleResult(data);
     } catch (err) {
@@ -2097,6 +2103,105 @@ function ProfileTab({ username, jobs, contacts, todos, resumeVersions, resumeTex
   );
 }
 
+/* ============================== ADMIN PANEL ============================== */
+function AdminPanel({ onClose, toast }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [authed, setAuthed] = useState(false);
+  const [secretInput, setSecretInput] = useState("");
+  const [secret, setSecret] = useState("");
+  const [usingMaster, setUsingMaster] = useState(false);
+
+  const load = async (s) => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/admin?action=list&secret=" + encodeURIComponent(s));
+      const data = await res.json();
+      if (!res.ok) { toast("error", data.error || "Access denied -- wrong secret."); setLoading(false); return; }
+      setUsers(data.users || []);
+      setUsingMaster(!!data.usingMasterKey);
+      setAuthed(true);
+    } catch (e) { toast("error", "Couldn't reach the server."); }
+    setLoading(false);
+  };
+
+  const doAction = async (userId, action) => {
+    try {
+      const res = await fetch("/api/auth/admin?action=" + action + "&userId=" + userId + "&secret=" + encodeURIComponent(secret));
+      const data = await res.json();
+      if (!res.ok) { toast("error", data.error || "Failed."); return; }
+      toast("success", data.message || "Done.");
+      load(secret);
+    } catch (e) { toast("error", "Couldn't reach the server."); }
+  };
+
+  const pending = users.filter((u) => u.status === "pending");
+  const active  = users.filter((u) => u.status !== "pending");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(61,55,82,0.5)" }} onClick={onClose}>
+      <div className="fade-in bg-ink2 border border-hair rounded-lg w-full max-w-lg p-5 max-h-screen overflow-y-auto scrollbar-thin" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="jshq-display text-lg text-paper">Admin panel</h3>
+            {usingMaster && <p className="text-xs text-rust">Emergency access via master key -- reset ADMIN_SECRET when done.</p>}
+          </div>
+          <button onClick={onClose} className="text-muted hover:text-main focus-ring rounded"><Icon name="x" size={18} /></button>
+        </div>
+        {!authed ? (
+          <div>
+            <form onSubmit={(e) => { e.preventDefault(); setSecret(secretInput); load(secretInput); }} className="flex gap-2">
+              <input type="password" value={secretInput} onChange={(e) => setSecretInput(e.target.value)} className="flex-1 rounded px-3 py-2 text-sm focus-ring" placeholder="Enter ADMIN_SECRET (or ADMIN_MASTER_KEY if you forgot)" autoFocus />
+              <button type="submit" className="btn-primary rounded px-4 py-2 text-sm font-medium focus-ring">Enter</button>
+            </form>
+            <p className="text-xs text-muted mt-2">Forgot ADMIN_SECRET? Add ADMIN_MASTER_KEY to Vercel env vars as a temporary bypass, then reset ADMIN_SECRET afterwards.</p>
+          </div>
+        ) : loading ? (
+          <div className="flex justify-center py-8"><Icon name="loader" size={20} spin /></div>
+        ) : (
+          <div className="space-y-4">
+            {pending.length > 0 && (
+              <div>
+                <p className="text-xs text-muted jshq-mono uppercase tracking-wide mb-2">Pending approval ({pending.length})</p>
+                <div className="space-y-2">
+                  {pending.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between gap-2 p-3 rounded-lg" style={{ background: "#FDF6EA", border: "1px solid #EBD9B4" }}>
+                      <div>
+                        <p className="text-sm font-medium text-paper">{u.username}</p>
+                        <p className="text-xs text-muted">{u.email || "no email"}{u.googleId ? " · Google" : ""}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => doAction(u.id, "approve")} className="btn-primary rounded px-3 py-1.5 text-xs font-medium focus-ring">Approve</button>
+                        <button onClick={() => doAction(u.id, "reject")} className="rounded px-3 py-1.5 text-xs focus-ring" style={{ border: "1px solid #F3C9C0", color: "#D97862" }}>Reject</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <p className="text-xs text-muted jshq-mono uppercase tracking-wide mb-2">Active accounts ({active.length})</p>
+              {active.length === 0 ? <p className="text-xs text-muted italic">No active accounts yet.</p> : (
+                <div className="space-y-2">
+                  {active.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between gap-2 p-3 rounded-lg bg-ink3">
+                      <div>
+                        <p className="text-sm font-medium text-paper">{u.username}</p>
+                        <p className="text-xs text-muted">{u.email || "no email"}{u.googleId ? " · Google" : ""}</p>
+                      </div>
+                      <button onClick={() => { if (window.confirm("Delete " + u.username + "? This permanently removes all their data.")) doAction(u.id, "delete"); }} className="text-xs text-muted hover:text-rust focus-ring rounded px-2 py-1">Delete</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ============================== APP SHELL ============================== */
 const TABS = [
   { key: "tracker", label: "Pipeline", icon: "briefcase" },
@@ -2228,6 +2333,7 @@ function MainApp({ username, onLogout, toast }) {
         setDocuments(documentsData || []);
         setLoaded(true); // saves are only ever enabled after a fully successful load
       } catch (e) {
+        console.error("[load error]", e && e.message, e);
         setLoadError(true); // loaded stays false -> nothing can overwrite server data
       }
     })();
@@ -2321,7 +2427,7 @@ function MainApp({ username, onLogout, toast }) {
         <div className="text-center max-w-sm">
           <Icon name="info" size={24} className="text-rust mx-auto mb-3" />
           <h2 className="jshq-display text-lg text-paper">Couldn't load your data</h2>
-          <p className="text-muted text-sm mt-1 mb-4">This usually happens for a minute right after a new deployment. Your saved data is untouched -- nothing is written until loading succeeds.</p>
+          <p className="text-muted text-sm mt-1 mb-4">This usually happens right after a new deployment. Your saved data is untouched. If this keeps happening, check Vercel Logs for a <code>[load error]</code> line -- it will say exactly what failed.</p>
           <div className="flex justify-center gap-2">
             <button onClick={() => setLoadAttempt((n) => n + 1)} className="btn-primary rounded px-4 py-2 text-sm font-medium focus-ring">Retry</button>
             <button onClick={onLogout} className="btn-ghost rounded px-4 py-2 text-sm focus-ring">Log out</button>
