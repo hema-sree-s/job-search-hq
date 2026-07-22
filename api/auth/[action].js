@@ -40,8 +40,8 @@ async function handleSignup(req, res) {
   const adminEmail = process.env.ADMIN_EMAIL || process.env.GMAIL_USER;
   if (adminEmail) {
     const origin = `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
-    const approveLink = `${origin}/api/auth/admin?action=approve&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
-    const rejectLink  = `${origin}/api/auth/admin?action=reject&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
+    const approveLink = `${origin}/api/admin?action=approve&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
+    const rejectLink  = `${origin}/api/admin?action=reject&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
     const { sendEmail } = require("../../lib/email");
     await sendEmail({
       to: adminEmail,
@@ -127,8 +127,8 @@ async function handleGoogle(req, res) {
     if (adminEmail) {
       const { sendEmail } = require("../../lib/email");
       const origin = `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
-      const approveLink = `${origin}/api/auth/admin?action=approve&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
-      const rejectLink  = `${origin}/api/auth/admin?action=reject&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
+      const approveLink = `${origin}/api/admin?action=approve&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
+      const rejectLink  = `${origin}/api/admin?action=reject&userId=${id}&secret=${process.env.ADMIN_SECRET || ""}`;
       await sendEmail({
         to: adminEmail,
         subject: `New Google signup request: ${uname}`,
@@ -314,101 +314,6 @@ async function handleDeleteAccount(req, res) {
   res.status(200).json({ ok: true });
 }
 
-async function handleAdmin(req, res) {
-  // Admin secret protects these actions. Set ADMIN_SECRET in Vercel env vars.
-  // The approve/reject links in signup emails include it automatically.
-  const secret = process.env.ADMIN_SECRET;
-  const masterKey = process.env.ADMIN_MASTER_KEY; // emergency fallback bypass
-  const provided = req.query.secret || (req.body && req.body.secret);
-
-  const validSecret = secret && provided === secret;
-  const validMaster = masterKey && provided === masterKey;
-
-  if (!validSecret && !validMaster) {
-    if (!secret && !masterKey) {
-      return res.status(500).json({ error: "ADMIN_SECRET env var is not set. Add it in Vercel env vars and redeploy." });
-    }
-    // Log failed attempts to Vercel logs so the admin can see them
-    console.log(`[admin] unauthorized attempt from ${req.headers["x-forwarded-for"] || "unknown"}`);
-    return res.status(401).json({ error: "Unauthorized -- wrong admin secret." });
-  }
-  if (validMaster && !validSecret) {
-    // Emergency access -- log it so you remember to reset ADMIN_SECRET after
-    console.log("[admin] ACCESS VIA MASTER KEY -- remember to reset ADMIN_SECRET");
-  }
-
-  const redis = getRedis();
-  const { action: adminAction, userId } = req.query;
-
-  // List all users (for the admin panel in the app)
-  if (adminAction === "list") {
-    // Scan all user keys (pending users aren't in users:index yet)
-    let allIds = [];
-    try {
-      let cursor = 0;
-      do {
-        const [nextCursor, keys] = await redis.scan(cursor, { match: "user:u_*", count: 100 });
-        cursor = parseInt(nextCursor);
-        allIds.push(...keys.map((k) => k.replace("user:", "")));
-      } while (cursor !== 0);
-    } catch (e) {
-      // Fallback if scan not supported: use the index we have
-      allIds = (await redis.smembers("users:index")) || [];
-    }
-    allIds = [...new Set(allIds)];
-    const users = (await Promise.all(allIds.map((id) => getJSON(redis, `user:${id}`)))).filter(Boolean);
-    return res.status(200).json({
-      adminEmail: process.env.ADMIN_EMAIL || process.env.GMAIL_USER || null,
-      usingMasterKey: validMaster && !validSecret,
-      users: users.map((u) => ({
-        id: u.id, username: u.username, email: u.email || null,
-        status: u.status || "active", googleId: !!u.googleId,
-        createdAt: u.id ? u.id.split("_")[1] || null : null,
-      })).sort((a, b) => {
-        if (a.status === "pending" && b.status !== "pending") return -1;
-        if (b.status === "pending" && a.status !== "pending") return 1;
-        return (b.createdAt || 0) - (a.createdAt || 0);
-      })
-    });
-  }
-
-  // Approve a pending account
-  if (adminAction === "approve" && userId) {
-    const user = await getJSON(redis, `user:${userId}`);
-    if (!user) return res.status(404).json({ error: "User not found." });
-    user.status = "active";
-    await setJSON(redis, `user:${userId}`, user);
-    await redis.sadd("users:index", userId);
-    const { sendEmail } = require("../../lib/email");
-    if (user.email) {
-      await sendEmail({
-        to: user.email,
-        subject: "Your Job Search HQ account is approved!",
-        html: `<p>Hi ${user.username},</p><p>Your Job Search HQ account has been approved. You can now log in at <a href="https://${req.headers["x-forwarded-host"] || req.headers.host}">Job Search HQ</a>.</p>`,
-      }).catch(() => {});
-    }
-    // Redirect so clicking the email link shows a nice page
-    if (req.method === "GET") return res.redirect(302, `/?approved=1`);
-    return res.status(200).json({ ok: true, message: `${user.username} approved.` });
-  }
-
-  // Reject/delete any account
-  if ((adminAction === "reject" || adminAction === "delete") && userId) {
-    const user = await getJSON(redis, `user:${userId}`);
-    if (!user) return res.status(404).json({ error: "User not found." });
-    // Clean up everything
-    const resources = ["jobs", "resume", "interviews", "learning", "profile", "documents", "contacts", "todos"];
-    for (const r of resources) await redis.del(`blob:${r}:${userId}`);
-    await redis.del(`user:byUsername:${user.username.toLowerCase()}`);
-    if (user.googleId) await redis.del(`user:byGoogleId:${user.googleId}`);
-    await redis.del(`user:${userId}`);
-    await redis.srem("users:index", userId);
-    if (adminAction === "reject" && req.method === "GET") return res.redirect(302, `/?rejected=1`);
-    return res.status(200).json({ ok: true, message: `${user.username} deleted.` });
-  }
-
-  res.status(400).json({ error: "Unknown admin action." });
-}
 
 module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "no-store, must-revalidate");
@@ -428,7 +333,6 @@ module.exports = async (req, res) => {
     if (action === "request-reset") return await handleRequestReset(req, res);
     if (action === "reset-password") return await handleResetPassword(req, res);
     if (action === "delete-account") return await handleDeleteAccount(req, res);
-    if (action === "admin") return await handleAdmin(req, res);
     res.status(404).json({ error: "Unknown auth action" });
   } catch (e) {
     res.status(500).json({ error: e.message || "Server error" });
